@@ -1,0 +1,562 @@
+[
+ {
+  "num": "1",
+  "title": "简介",
+  "href": "/books/python/introduction/index.html"
+ },
+ {
+  "num": "2",
+  "title": "Python历史",
+  "href": "/books/python/history/index.html"
+ },
+ {
+  "num": "3",
+  "title": "安装Python",
+  "href": "/books/python/install/index.html"
+ },
+ {
+  "num": "3.1",
+  "title": "Python解释器",
+  "href": "/books/python/install/interpreter/index.html"
+ },
+ {
+  "num": "4",
+  "title": "第一个Python程序",
+  "href": "/books/python/first-program/index.html"
+ },
+ {
+  "num": "4.1",
+  "title": "使用文本编辑器",
+  "href": "/books/python/first-program/text-editor/index.html"
+ },
+ {
+  "num": "4.2",
+  "title": "输入和输出",
+  "href": "/books/python/first-program/input-output/index.html"
+ },
+ {
+  "num": "5",
+  "title": "Python基础",
+  "href": "/books/python/basic/index.html"
+ },
+ {
+  "num": "5.1",
+  "title": "数据类型和变量",
+  "href": "/books/python/basic/data-types/index.html"
+ },
+ {
+  "num": "5.2",
+  "title": "字符串和编码",
+  "href": "/books/python/basic/string-encoding/index.html"
+ },
+ {
+  "num": "5.3",
+  "title": "使用list和tuple",
+  "href": "/books/python/basic/list-tuple/index.html"
+ },
+ {
+  "num": "5.4",
+  "title": "条件判断",
+  "href": "/books/python/basic/if/index.html"
+ },
+ {
+  "num": "5.5",
+  "title": "模式匹配",
+  "href": "/books/python/basic/match/index.html"
+ },
+ {
+  "num": "5.6",
+  "title": "循环",
+  "href": "/books/python/basic/loop/index.html"
+ },
+ {
+  "num": "5.7",
+  "title": "使用dict和set",
+  "href": "/books/python/basic/dict-set/index.html"
+ },
+ {
+  "num": "6",
+  "title": "函数",
+  "href": "/books/python/function/index.html"
+ },
+ {
+  "num": "6.1",
+  "title": "调用函数",
+  "href": "/books/python/function/call-function/index.html"
+ },
+ {
+  "num": "6.2",
+  "title": "定义函数",
+  "href": "/books/python/function/define-function/index.html"
+ },
+ {
+  "num": "6.3",
+  "title": "函数的参数",
+  "href": "/books/python/function/parameter/index.html"
+ },
+ {
+  "num": "6.4",
+  "title": "递归函数",
+  "href": "/books/python/function/recursive-function/index.html"
+ },
+ {
+  "num": "7",
+  "title": "高级特性",
+  "href": "/books/python/advanced/index.html"
+ },
+ {
+  "num": "7.1",
+  "title": "切片",
+  "href": "/books/python/advanced/slice/index.html"
+ },
+ {
+  "num": "7.2",
+  "title": "迭代",
+  "href": "/books/python/advanced/iterate/index.html"
+ },
+ {
+  "num": "7.3",
+  "title": "列表生成式",
+  "href": "/books/python/advanced/list-comprehension/index.html"
+ },
+ {
+  "num": "7.4",
+  "title": "生成器",
+  "href": "/books/python/advanced/generator/index.html"
+ },
+ {
+  "num": "7.5",
+  "title": "迭代器",
+  "href": "/books/python/advanced/iterator/index.html"
+ },
+ {
+  "num": "8",
+  "title": "函数式编程",
+  "href": "/books/python/functional/index.html"
+ },
+ {
+  "num": "8.1",
+  "title": "高阶函数",
+  "href": "/books/python/functional/higher-order-function/index.html"
+ },
+ {
+  "num": "8.1.1",
+  "title": "map/reduce",
+  "href": "/books/python/functional/higher-order-function/map-reduce/index.html"
+ },
+ {
+  "num": "8.1.2",
+  "title": "filter",
+  "href": "/books/python/functional/higher-order-function/filter/index.html"
+ },
+ {
+  "num": "8.1.3",
+  "title": "sorted",
+  "href": "/books/python/functional/higher-order-function/sorted/index.html"
+ },
+ {
+  "num": "8.2",
+  "title": "返回函数",
+  "href": "/books/python/functional/return-function/index.html"
+ },
+ {
+  "num": "8.3",
+  "title": "匿名函数",
+  "href": "/books/python/functional/lambda/index.html"
+ },
+ {
+  "num": "8.4",
+  "title": "装饰器",
+  "href": "/books/python/functional/decorator/index.html"
+ },
+ {
+  "num": "8.5",
+  "title": "偏函数",
+  "href": "/books/python/functional/partial/index.html"
+ },
+ {
+  "num": "9",
+  "title": "模块",
+  "href": "/books/python/module/index.html"
+ },
+ {
+  "num": "9.1",
+  "title": "使用模块",
+  "href": "/books/python/module/use-module/index.html"
+ },
+ {
+  "num": "9.2",
+  "title": "安装第三方模块",
+  "href": "/books/python/module/install/index.html"
+ },
+ {
+  "num": "10",
+  "title": "面向对象编程",
+  "href": "/books/python/oop/index.html"
+ },
+ {
+  "num": "10.1",
+  "title": "类和实例",
+  "href": "/books/python/oop/class/index.html"
+ },
+ {
+  "num": "10.2",
+  "title": "访问限制",
+  "href": "/books/python/oop/access/index.html"
+ },
+ {
+  "num": "10.3",
+  "title": "继承和多态",
+  "href": "/books/python/oop/extend/index.html"
+ },
+ {
+  "num": "10.4",
+  "title": "获取对象信息",
+  "href": "/books/python/oop/attr/index.html"
+ },
+ {
+  "num": "10.5",
+  "title": "实例属性和类属性",
+  "href": "/books/python/oop/props/index.html"
+ },
+ {
+  "num": "11",
+  "title": "面向对象高级编程",
+  "href": "/books/python/oop-adv/index.html"
+ },
+ {
+  "num": "11.1",
+  "title": "使用__slots__",
+  "href": "/books/python/oop-adv/slots/index.html"
+ },
+ {
+  "num": "11.2",
+  "title": "使用@property",
+  "href": "/books/python/oop-adv/property/index.html"
+ },
+ {
+  "num": "11.3",
+  "title": "多重继承",
+  "href": "/books/python/oop-adv/multi-inheritance/index.html"
+ },
+ {
+  "num": "11.4",
+  "title": "定制类",
+  "href": "/books/python/oop-adv/special-method/index.html"
+ },
+ {
+  "num": "11.5",
+  "title": "使用枚举类",
+  "href": "/books/python/oop-adv/enum/index.html"
+ },
+ {
+  "num": "11.6",
+  "title": "使用元类",
+  "href": "/books/python/oop-adv/meta-class/index.html"
+ },
+ {
+  "num": "12",
+  "title": "错误、调试和测试",
+  "href": "/books/python/error-debug-test/index.html"
+ },
+ {
+  "num": "12.1",
+  "title": "错误处理",
+  "href": "/books/python/error-debug-test/error/index.html"
+ },
+ {
+  "num": "12.2",
+  "title": "调试",
+  "href": "/books/python/error-debug-test/debug/index.html"
+ },
+ {
+  "num": "12.3",
+  "title": "单元测试",
+  "href": "/books/python/error-debug-test/unit-test/index.html"
+ },
+ {
+  "num": "12.4",
+  "title": "文档测试",
+  "href": "/books/python/error-debug-test/doctest/index.html"
+ },
+ {
+  "num": "13",
+  "title": "IO编程",
+  "href": "/books/python/io/index.html"
+ },
+ {
+  "num": "13.1",
+  "title": "文件读写",
+  "href": "/books/python/io/file/index.html"
+ },
+ {
+  "num": "13.2",
+  "title": "StringIO和BytesIO",
+  "href": "/books/python/io/stringio-bytesio/index.html"
+ },
+ {
+  "num": "13.3",
+  "title": "操作文件和目录",
+  "href": "/books/python/io/dir/index.html"
+ },
+ {
+  "num": "13.4",
+  "title": "序列化",
+  "href": "/books/python/io/serialization/index.html"
+ },
+ {
+  "num": "14",
+  "title": "进程和线程",
+  "href": "/books/python/process-thread/index.html"
+ },
+ {
+  "num": "14.1",
+  "title": "多进程",
+  "href": "/books/python/process-thread/process/index.html"
+ },
+ {
+  "num": "14.2",
+  "title": "多线程",
+  "href": "/books/python/process-thread/thread/index.html"
+ },
+ {
+  "num": "14.3",
+  "title": "ThreadLocal",
+  "href": "/books/python/process-thread/threadlocal/index.html"
+ },
+ {
+  "num": "14.4",
+  "title": "进程 vs. 线程",
+  "href": "/books/python/process-thread/process-vs-thread/index.html"
+ },
+ {
+  "num": "14.5",
+  "title": "分布式进程",
+  "href": "/books/python/process-thread/process-manager/index.html"
+ },
+ {
+  "num": "15",
+  "title": "正则表达式",
+  "href": "/books/python/reg-exp/index.html"
+ },
+ {
+  "num": "16",
+  "title": "常用内建模块",
+  "href": "/books/python/built-in-modules/index.html"
+ },
+ {
+  "num": "16.1",
+  "title": "datetime",
+  "href": "/books/python/built-in-modules/datetime/index.html"
+ },
+ {
+  "num": "16.2",
+  "title": "collections",
+  "href": "/books/python/built-in-modules/collections/index.html"
+ },
+ {
+  "num": "16.3",
+  "title": "argparse",
+  "href": "/books/python/built-in-modules/argparse/index.html"
+ },
+ {
+  "num": "16.4",
+  "title": "base64",
+  "href": "/books/python/built-in-modules/base64/index.html"
+ },
+ {
+  "num": "16.5",
+  "title": "struct",
+  "href": "/books/python/built-in-modules/struct/index.html"
+ },
+ {
+  "num": "16.6",
+  "title": "hashlib",
+  "href": "/books/python/built-in-modules/hashlib/index.html"
+ },
+ {
+  "num": "16.7",
+  "title": "hmac",
+  "href": "/books/python/built-in-modules/hmac/index.html"
+ },
+ {
+  "num": "16.8",
+  "title": "itertools",
+  "href": "/books/python/built-in-modules/itertools/index.html"
+ },
+ {
+  "num": "16.9",
+  "title": "contextlib",
+  "href": "/books/python/built-in-modules/contextlib/index.html"
+ },
+ {
+  "num": "16.10",
+  "title": "urllib",
+  "href": "/books/python/built-in-modules/urllib/index.html"
+ },
+ {
+  "num": "16.11",
+  "title": "XML",
+  "href": "/books/python/built-in-modules/xml/index.html"
+ },
+ {
+  "num": "16.12",
+  "title": "HTMLParser",
+  "href": "/books/python/built-in-modules/htmlparser/index.html"
+ },
+ {
+  "num": "16.13",
+  "title": "venv",
+  "href": "/books/python/built-in-modules/venv/index.html"
+ },
+ {
+  "num": "17",
+  "title": "常用第三方模块",
+  "href": "/books/python/third-party-modules/index.html"
+ },
+ {
+  "num": "17.1",
+  "title": "Pillow",
+  "href": "/books/python/third-party-modules/pillow/index.html"
+ },
+ {
+  "num": "17.2",
+  "title": "requests",
+  "href": "/books/python/third-party-modules/requests/index.html"
+ },
+ {
+  "num": "17.3",
+  "title": "chardet",
+  "href": "/books/python/third-party-modules/chardet/index.html"
+ },
+ {
+  "num": "17.4",
+  "title": "psutil",
+  "href": "/books/python/third-party-modules/psutil/index.html"
+ },
+ {
+  "num": "18",
+  "title": "图形界面",
+  "href": "/books/python/gui/index.html"
+ },
+ {
+  "num": "18.1",
+  "title": "海龟绘图",
+  "href": "/books/python/gui/turtle/index.html"
+ },
+ {
+  "num": "19",
+  "title": "网络编程",
+  "href": "/books/python/network/index.html"
+ },
+ {
+  "num": "19.1",
+  "title": "TCP/IP简介",
+  "href": "/books/python/network/tcp-ip/index.html"
+ },
+ {
+  "num": "19.2",
+  "title": "TCP编程",
+  "href": "/books/python/network/tcp/index.html"
+ },
+ {
+  "num": "19.3",
+  "title": "UDP编程",
+  "href": "/books/python/network/udp/index.html"
+ },
+ {
+  "num": "20",
+  "title": "电子邮件",
+  "href": "/books/python/email/index.html"
+ },
+ {
+  "num": "20.1",
+  "title": "SMTP发送邮件",
+  "href": "/books/python/email/smtp/index.html"
+ },
+ {
+  "num": "20.2",
+  "title": "POP3收取邮件",
+  "href": "/books/python/email/pop3/index.html"
+ },
+ {
+  "num": "21",
+  "title": "访问数据库",
+  "href": "/books/python/database/index.html"
+ },
+ {
+  "num": "21.1",
+  "title": "使用SQLite",
+  "href": "/books/python/database/sqlite/index.html"
+ },
+ {
+  "num": "21.2",
+  "title": "使用MySQL",
+  "href": "/books/python/database/mysql/index.html"
+ },
+ {
+  "num": "21.3",
+  "title": "使用SQLAlchemy",
+  "href": "/books/python/database/sqlalchemy/index.html"
+ },
+ {
+  "num": "22",
+  "title": "Web开发",
+  "href": "/books/python/web/index.html"
+ },
+ {
+  "num": "22.1",
+  "title": "HTTP协议简介",
+  "href": "/books/python/web/http-basic/index.html"
+ },
+ {
+  "num": "22.2",
+  "title": "HTML简介",
+  "href": "/books/python/web/html-basic/index.html"
+ },
+ {
+  "num": "22.3",
+  "title": "WSGI接口",
+  "href": "/books/python/web/wsgi/index.html"
+ },
+ {
+  "num": "22.4",
+  "title": "使用Web框架",
+  "href": "/books/python/web/web-framework/index.html"
+ },
+ {
+  "num": "22.5",
+  "title": "使用模板",
+  "href": "/books/python/web/template/index.html"
+ },
+ {
+  "num": "23",
+  "title": "异步IO",
+  "href": "/books/python/async-io/index.html"
+ },
+ {
+  "num": "23.1",
+  "title": "协程",
+  "href": "/books/python/async-io/coroutine/index.html"
+ },
+ {
+  "num": "23.2",
+  "title": "使用asyncio",
+  "href": "/books/python/async-io/asyncio/index.html"
+ },
+ {
+  "num": "23.3",
+  "title": "使用aiohttp",
+  "href": "/books/python/async-io/aiohttp/index.html"
+ },
+ {
+  "num": "24",
+  "title": "FAQ",
+  "href": "/books/python/faq/index.html"
+ },
+ {
+  "num": "25",
+  "title": "期末总结",
+  "href": "/books/python/conclusion/index.html"
+ }
+]

@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+.DS_Store
+tools/_domcheck/
+tools/_toc_snapshot.html
+
+# 个人学习数据：由 server.py 首次运行时自动创建，绝不入库
+records/
+notes/
