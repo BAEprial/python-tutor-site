@@ -41,6 +41,7 @@ TEMPLATE = """<!doctype html>
   <script src="assets/data/entry-bank.js"></script>
   <script src="assets/data/question-bank.js"></script>
   <script src="assets/py-runner.js"></script>
+  <script src="assets/config.js"></script>
   <script src="assets/app.js"></script>
 </body>
 </html>

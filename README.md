@@ -65,6 +65,7 @@ python launcher.py
 ├── review.html  progress.html  notes.html      # 7 个页面
 ├── assets/
 │   ├── app.js  app.css  py-runner.js          # 应用逻辑 / 样式 / 判题
+│   ├── config.js                             # 集成配置 + 三个适配器 + 设置面板
 │   └── data/
 │       ├── course.js  toc.json                # 112 天课程数据、原站目录
 │       ├── question-bank.js  entry-bank.js    # 主题库、零基础入门题池
@@ -83,7 +84,42 @@ python tools/verify.py
 
 校验 112 天组卷、超纲与提前术语、题池重复、336 个判题脚本的参考解答、94 个示例输出，以及引号/空格等价用例。
 
-## 八、边界与说明
+## 八、集成设置：存储 / 笔记 / 导师都能换
+
+顶栏右侧的「设置」按钮打开配置面板。**默认值与未改造版本完全一致**：自动探测本地服务、笔记写 `notes/`、导师读 `records/`。不碰任何配置也能按原来的方式使用。
+
+| 分组 | 可选值 | 说明 |
+| --- | --- | --- |
+| 进度存储 | `auto`（默认） | 先探测本机服务，没运行就退回浏览器本地 |
+| | `browser` | 不发任何网络请求，进度只存这台设备 |
+| | `cloud` | 填 endpoint，需自行实现 `/api/state`、`/api/mentor` 等接口；可填 Bearer token |
+| 笔记导出 | `obsidian`（默认） | 由本地服务写 `notes/*.md` |
+| | `off` | 不导出、不生成笔记文件，适合不用 Obsidian 的人 |
+| | `download` | 打包成 `.md` 下载，完全不依赖 Obsidian |
+| | `webhook` | 把 `{ files }` POST 到自己的笔记服务 |
+| 导师 | `local`（默认） | 站点读 `/api/mentor`，WorkBuddy 读 `records/` |
+| | `off` | 不显示导师回信 |
+| | `agent` | 接自己的 AI agent，见下方协议 |
+
+**自有 AI Agent 协议**（实现在 `assets/config.js` 的 `MentorAdapter`）：
+
+```
+GET  endpoint  -> { "replies": [{ "text": "...", "ts": "ISO 时间" }] }
+POST endpoint  <- { day, lessonId, question, kind, drafts, attempts }
+```
+
+页面加载时 GET 拉回信，发布 Comments 提问时 POST。浏览器直连第三方服务需对方允许 CORS；不通时把导师设为 `off` 或 `local`，改用复制/粘贴。
+
+**隐私与边界**：
+
+- 全部配置（含 token）只存当前浏览器 `localStorage`（`pyfirst.integrations.v1` / `pyfirst.secrets.v1`），**不进 `state.json`、不进 `records/`、不进仓库，也不随进度同步**。导出备份、push 代码都不会带上密钥。
+- 换设备或换浏览器，配置不跟着走，这是有意为之。
+- 配置只影响「外部集成」；课程、题库、判题、费曼复述、进度逻辑一行没改。
+- 本版仍是**本地运行的源码**，没有做在线发布；即便存储模式选 `cloud`，也要你自己提供那个服务。
+
+实现位置：`assets/config.js`（默认值 + 三个适配器 + 设置面板），`app.js` 里收拢的 `apiBases()` / `apiHeaders()` / `Store.loadMentor()` / `syncNotes()`。重新生成页面请跑 `python tools/build_pages.py`，模板里已包含 `config.js`，不会丢。
+
+## 九、边界与说明
 
 - **纯本地、单人**：没有账号、云同步或多人隔离；不同设备的数据互不相通。本仓库也不是可直接访问的在线网站。
 - **题库含答案**：`question-bank.js` / `entry-bank.js` 里能看到参考解答，公开源码仅作展示与学习参考。

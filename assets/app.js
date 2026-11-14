@@ -9,6 +9,20 @@
   const Q = window.QB;
   const KEY = 'pyfirst.state.v2';
   const API = { state: '/api/state', notes: '/api/notes/sync', report: '/api/report', mentor: '/api/mentor' };
+  /* 集成层由 assets/config.js 提供；万一没加载，全部退回未改造版本的行为 */
+  const I = () => window.Integrations || null;
+  function apiBases() {
+    const x = I();
+    return (x && x.storage) ? x.storage.bases()
+      : ['', 'http://127.0.0.1:8765', 'http://localhost:8765'];
+  }
+  function authHeaders() {
+    const x = I();
+    return (x && x.storage) ? x.storage.headers() : {};
+  }
+  function apiHeaders(extra) {
+    return Object.assign({ 'Content-Type': 'application/json' }, authHeaders(), extra || {});
+  }
   const NAV = [
     ['home', 'index.html', '今日'],
     ['catalog', 'catalog.html', '课程目录'],
@@ -186,8 +200,7 @@
     return s;
   }
 
-  /* ---------------- 状态存储（服务器是唯一可信数据源） ---------------- */
-  const API_BASES = ['', 'http://127.0.0.1:8765', 'http://localhost:8765'];
+  /* ---------------- 状态存储（后端由 assets/config.js 的 StorageAdapter 决定） ---------------- */
   let apiBase = '';
   let dirty = false;
   let saving = false;
@@ -216,9 +229,9 @@
      三者的 localStorage 互不相通。逐个试 API 地址，找到真正持有
      records/state.json 的服务，所有入口就共享同一份进度。 */
   async function apiGet(p) {
-    for (const base of API_BASES) {
+    for (const base of apiBases()) {
       try {
-        const res = await fetch(base + p, { cache: 'no-store' });
+        const res = await fetch(base + p, { cache: 'no-store', headers: authHeaders() });
         if (!res.ok) continue;
         const data = await res.json();
         if (data && typeof data === 'object' && !Array.isArray(data)) {
@@ -258,16 +271,21 @@
     pill() {
       const el = document.getElementById('sync-pill');
       if (!el) return;
-      const dot = !online ? 'off' : (saveFailed ? 'warn' : (saving || dirty ? 'busy' : 'on'));
+      const x = I();
+      const localOnly = !!(x && x.storage && x.storage.mode() === 'browser');
+      const dot = localOnly ? 'on' : (!online ? 'off' : (saveFailed ? 'warn' : (saving || dirty ? 'busy' : 'on')));
       let text;
-      if (!online) text = '离线暂存 · 等待服务';
+      if (localOnly) text = '已保存在本机浏览器';
+      else if (!online) text = '离线暂存 · 等待服务';
       else if (saveFailed) text = '保存失败 · 自动重试中';
       else if (saving || dirty) text = '自动保存中…';
       else text = '已自动保存' + (lastSavedAt ? ' ' + lastSavedAt : '');
       el.innerHTML = '<span class="dot ' + dot + '"></span>' + text;
-      el.title = online
-        ? '每次操作实时写入 records/state.json，WorkBuddy 可直接读取；输入框里没点保存的内容也会同步'
-        : '暂存浏览器；请双击桌面的「Python 私塾」快捷方式，它会启动服务并打开网站';
+      el.title = localOnly
+        ? '按「设置 → 进度存储 → 仅浏览器本地」运行：不发任何网络请求'
+        : (online
+          ? '每次操作实时写入 records/state.json，WorkBuddy 可直接读取；输入框里没点保存的内容也会同步'
+          : '暂存浏览器；请双击桌面的「Python 私塾」快捷方式，它会启动服务并打开网站');
     },
     async push() {
       if (!online || saving) return;
@@ -275,7 +293,7 @@
       saving = true; dirty = false; this.pill();
       try {
         const res = await fetch(apiUrl(API.state), {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: snapshot
+          method: 'POST', headers: apiHeaders(), body: snapshot
         });
         if (!res.ok) throw new Error('HTTP ' + res.status);
         lastSavedAt = new Date().toTimeString().slice(0, 8);
@@ -299,7 +317,7 @@
       if (!online) return;
       try {
         await fetch(apiUrl(API.state) + '?replace=1', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: apiHeaders(),
           body: JSON.stringify(state)
         });
       } catch (e) { /* ignore */ }
@@ -343,12 +361,13 @@
         if (!online || !dirty) return;
         const payload = JSON.stringify(state);
         try {
-          if (navigator.sendBeacon) {
+          const needsAuth = !!(I() && I().storage && I().storage.needsAuth());
+          if (navigator.sendBeacon && !needsAuth) {
             const blob = new Blob([payload], { type: 'text/plain;charset=UTF-8' });
             if (navigator.sendBeacon(apiUrl(API.state), blob)) dirty = false;
           } else {
             fetch(apiUrl(API.state), {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              method: 'POST', headers: apiHeaders(),
               body: payload, keepalive: true
             }).catch(() => {});
             dirty = false;
@@ -362,8 +381,10 @@
       window.addEventListener('beforeunload', flush);
     },
     async loadMentor() {
-      const data = await apiGet(API.mentor);
-      if (data) mentorReplies = data.replies || [];
+      const x = I();
+      mentorReplies = (x && x.mentor)
+        ? await x.mentor.load({ apiGet })
+        : ((await apiGet(API.mentor)) || {}).replies || [];
     }
   };
 
@@ -586,23 +607,28 @@
       const l = lessonBy(id);
       if (l) payload.files['Day-' + String(l.day).padStart(3, '0') + '.md'] = buildNoteMd(l);
     });
-    if (!online) {
-      // 本地模式：打包下载，用户解压到 notes/ 即可
-      let bundle = '';
-      Object.entries(payload.files).forEach(([name, text]) => {
-        bundle += '\n\n===== ' + name + ' =====\n\n' + text;
+    const x = I();
+    if (!x || !x.notes) {
+      // 没加载 config.js 时退回旧版行为
+      if (!online) {
+        let bundle = '';
+        Object.entries(payload.files).forEach(([name, text]) => {
+          bundle += '\n\n===== ' + name + ' =====\n\n' + text;
+        });
+        download('notes-obsidian-bundle.md', bundle, 'text/markdown;charset=utf-8');
+        toast('已导出笔记合集');
+        return;
+      }
+      const res = await fetch(apiUrl(API.notes), {
+        method: 'POST', headers: apiHeaders(), body: JSON.stringify(payload)
       });
-      download('notes-obsidian-bundle.md', bundle, 'text/markdown;charset=utf-8');
-      toast('已导出笔记合集，放入 notes/ 文件夹即可用 Obsidian 打开');
+      toast(res.ok ? '已同步到 notes/' : '同步失败，请确认 server.py 正在运行');
       return;
     }
-    const res = await fetch(apiUrl(API.notes), {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+    const result = await x.notes.publish(payload.files, {
+      online, apiUrl, download, headers: () => apiHeaders()
     });
-    if (res.ok) {
-      const j = await res.json();
-      toast('已同步 ' + j.written + ' 个 Markdown 文件到 notes/（Obsidian 直接打开）');
-    } else toast('同步失败，请确认 server.py 正在运行');
+    toast(result.message);
   }
 
   /* ---------------- 顶栏 ---------------- */
@@ -616,6 +642,7 @@
       '<div class="topbar"><div class="topbar-inner">' +
       '<div class="brand"><span class="brand-mark">Py</span><span>Python 私塾</span></div>' +
       '<nav class="nav">' + links + '</nav>' +
+      '<button class="btn ghost sm cfg-trigger" data-settings-open title="集成设置">设置</button>' +
       '<div class="sync-pill" id="sync-pill"><span class="dot busy"></span>连接中…</div>' +
       '</div></div>';
     // 页面重绘会重建顶栏，这里立刻把当前保存状态画回去
@@ -1331,7 +1358,17 @@
       });
       delete state.drafts[draftKey('comment', currentLesson.id)];
       Store.save(true);
-      toast('已发布，WorkBuddy 会在联动模式里看到');
+      const x = I();
+      if (x && x.mentor) {
+        // local 模式下导师读 records/；agent 模式额外把问题 POST 给自己的服务
+        x.mentor.ask({
+          day: currentLesson.day, lessonId: currentLesson.id,
+          question: text, kind: document.getElementById('comment-kind').value,
+          drafts: JSON.parse(JSON.stringify(state.drafts || {})),
+          attempts: (state.attempts || []).slice(-20)
+        }).catch(() => {});
+      }
+      toast('已发布，导师会在联动模式里看到');
       viewLesson(new URLSearchParams('day=' + currentLesson.day));
     }
     if (act === 'finish') {
@@ -1389,12 +1426,13 @@
       download('学习周报-' + todayStr() + '.md', buildReport(), 'text/markdown;charset=utf-8');
     }
     if (act === 'save-report') {
-      if (!online) { toast('请先启动 start.bat 开启联动'); return; }
-      const res = await fetch(apiUrl(API.report), {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ markdown: buildReport() })
-      });
-      toast(res.ok ? '周报已写入 records/mentor-brief.md，导师可直接读取' : '写入失败');
+      const x = I();
+      const result = (x && x.report)
+        ? await x.report.write(buildReport(), {
+            online, apiUrl, download, headers: () => apiHeaders()
+          })
+        : { ok: false, message: '请先启动 start.bat 开启联动' };
+      toast(result.message);
     }
     if (act === 'export-json') download('pyfirst-backup-' + todayStr() + '.json', JSON.stringify(state, null, 2), 'application/json');
     if (act === 'import-json') document.getElementById('import-file').click();
