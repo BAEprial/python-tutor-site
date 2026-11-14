@@ -4,6 +4,29 @@
 
 这是**源码快照，不是在线站点**。clone 到本地后双击 `start.bat` 就能跑，所有学习数据只留在你自己的电脑上。仓库里**不含任何个人作答记录或笔记**。
 
+## 界面预览
+
+![今日任务 · 学习主页](docs/screenshots/01-home.png)
+
+<details>
+<summary>展开查看其余页面（课程目录 / 编程实验室 / 错题册 / 笔记册 / 学习进度）</summary>
+
+| 课程目录 | 编程实验室 |
+| :---: | :---: |
+| <img src="docs/screenshots/02-catalog.png" width="440" alt="课程目录：25 章 112 节、按状态与难度筛选"> | <img src="docs/screenshots/03-playground.png" width="440" alt="编程实验室：浏览器内运行 Python"> |
+
+| 错题册与做题历史 | 学习进度 |
+| :---: | :---: |
+| <img src="docs/screenshots/04-review.png" width="440" alt="错题册：错题、历史、知识点诊断、导出 CSV"> | <img src="docs/screenshots/06-progress.png" width="440" alt="学习进度：热力图、章节完成度、里程碑"> |
+
+**笔记册局部特写** — 费曼复述与「我的笔记」输入框（输入过程实时自动保存，无需点保存）：
+
+<img src="docs/screenshots/05-notes-detail.png" width="600" alt="笔记册：费曼复述与我的笔记输入区">
+
+</details>
+
+> 截图取自实际运行界面（截至 Day 2），其中的进度与答题统计为展示性数据；仓库不含 `records/`、`notes/` 中的个人记录，笔记册截图已裁去导师回信栏。
+
 ---
 
 ## 一、它解决什么问题
@@ -71,6 +94,8 @@ python launcher.py
 │       ├── question-bank.js  entry-bank.js    # 主题库、零基础入门题池
 ├── server.py  launcher.py  start.bat          # 本地服务与一键启动
 ├── python-tutor.ico
+├── docs/screenshots/                         # 运行界面截图
+├── CHANGELOG.md                              # 开发日志：决策、缺陷定位与修正
 └── tools/
     ├── build_course.py  build_pages.py        # 从课程数据重建页面
     ├── verify.py  open_folder.py              # 自检、打开目录
@@ -129,3 +154,5 @@ POST endpoint  <- { day, lessonId, question, kind, drafts, attempts }
 ---
 
 技术栈：原生 HTML / CSS / JavaScript（无框架、无构建）+ Python 标准库 + Pyodide。
+
+开发过程、每一轮缺陷的定位与修正、以及 AI 协作的边界，见 [CHANGELOG.md](CHANGELOG.md)。
