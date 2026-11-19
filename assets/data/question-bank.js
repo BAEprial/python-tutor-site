@@ -1,5 +1,6 @@
 /* 题库与每日组卷调度器。
- * 5 道选择题 + 3 道编程实操 / 天；核心约束：只考「截至今天已经教过」的内容。
+ * 每天的选择 / 编程 / 费曼数量由 course.js 的 lesson.plan 给出（3~5 / 1~3 / 0~1），
+ * 核心约束：只考「截至今天已经教过」的内容。
  * 每道题由 tags 推出 unlock（所需知识点里最晚的解锁日），组卷时硬过滤 unlock <= day。
  * 早期零基础题在 entry-bank.js（stdout 型判题，不要求先学 def）。
  */
@@ -101,8 +102,32 @@ window.QB = (function () {
   const M = (id, tags, level, stem, options, answer, explain) => decorate({
     id, tags: tags.split(' '), level, stem, options, answer, explain, gen: false
   });
+  // 生成题的统一护栏：make() 返回的四个选项必须两两不同。
+  // 某些参数组合会让多个错误算式退化成同一个值（g001 的 c=1、g002 的切片重叠等），
+  // 这里换随机实例重抽；极端情况下仍冲突则用不重复的占位值补足，绝不放行重复选项。
+  function ensureDistinct(b, remake) {
+    if (!b || !Array.isArray(b.options)) return b;
+    const uniq = o => new Set(o.map(String)).size === o.length;
+    let tries = 0;
+    while (!uniq(b.options) && tries < 24) { b = remake(); tries++; }
+    if (!uniq(b.options)) {
+      const opts = b.options.map(String);
+      const used = new Set(opts);
+      let pad = 0;
+      for (let i = 0; i < opts.length; i++) {
+        if (i === b.answer) continue;
+        if (used.has(opts[i])) {
+          let v;
+          do { v = String(pad++); } while (used.has(v));
+          opts[i] = v; used.add(v);
+        }
+      }
+      b.options = opts;
+    }
+    return b;
+  }
   const G = (id, tags, level, make) => decorate({
-    id, tags: tags.split(' '), level, make, gen: true
+    id, tags: tags.split(' '), level, make: (r) => ensureDistinct(make(r), () => make(r)), gen: true
   });
   const L = (id, tags, level, make) => decorate({
     id, tags: tags.split(' '), level, make, type: 'lab'
@@ -221,8 +246,21 @@ window.QB = (function () {
   /* ---------------- 选择题：输出追踪题（参数化变体） ---------------- */
   const GEN = [
     G('g001', 'basics datatype general', 1, r => {
+      // c=1 时 a+b*c、a*c+b、(a+b)*c 会退化成同一个 a+b，出现三个相同选项。
+      // 用不同的错误算式保证四个选项两两不同：把第一个干扰项改成 (a+b+c)，
+      // 再按需把仍冲突的项替换成不与已有项重复的数，直到互异。
       const a = r.int(3, 20), b = r.int(2, 9), c = r.int(1, 6);
-      return { stem: `执行 print(${a} + ${b} * ${c}) 的输出是？`, options: [String(a + b * c), String((a + b) * c), String(a * c + b), String(a + b + c)], answer: 0, explain: '先乘除后加减：' + `${b} * ${c} = ${b * c}，再加 ${a}。` };
+      const correct = a + b * c;                 // 唯一正确答案，固定放在 A
+      const raw = [(a + b) * c, a + b + c, a * c + b];
+      const options = [String(correct)];
+      let filler = correct + 1;                  // 备用干扰值，逐次递增避开已用值
+      for (const v of raw) {
+        let x = v;
+        while (options.indexOf(String(x)) >= 0) { x = filler++; }
+        options.push(String(x));
+      }
+      return { stem: `执行 print(${a} + ${b} * ${c}) 的输出是？`, options: options, answer: 0,
+        explain: '先乘除后加减：' + `${b} * ${c} = ${b * c}，再加 ${a}，得 ${correct}。` };
     }),
     G('g002', 'advanced slice general', 2, r => {
       const s = r.pick(['abcdef', 'python', 'hello', 'abcdefg', 'uvwxyz']);
@@ -526,17 +564,54 @@ window.QB = (function () {
     return (fresh.length >= count ? fresh : scored).slice(0, count).map(x => x.q);
   }
 
+  // 当天题量：课程数据里的 plan 是唯一权威；缺字段时退回旧版 5+3，保证旧数据可用。
+  function planOf(lesson) {
+    const p = lesson && lesson.plan;
+    return {
+      mcq: p && Number.isInteger(p.mcq) ? p.mcq : 5,
+      lab: p && Number.isInteger(p.lab) ? p.lab : 3,
+      feynman: p && Number.isInteger(p.feynman) ? p.feynman : (lesson && lesson.feynman ? 1 : 0)
+    };
+  }
   function pickDaily(lesson, seen, options) {
     seen = seen || {};
     const opts = Object.assign({ preview: false, recent: [], flagged: [] }, options || {});
     const daySeed = lesson.id + '|' + (lesson.day || 1);
+    const plan = planOf(lesson);
     const mcqPool = MCQ.concat(GEN);
-    const chosenM = take(mcqPool, 5, lesson, seen, daySeed + 'm', opts);
-    const chosenL = take(LAB, 3, lesson, seen, daySeed + 'l', opts);
+    const chosenM = take(mcqPool, plan.mcq, lesson, seen, daySeed + 'm', opts);
+    const chosenL = take(LAB, plan.lab, lesson, seen, daySeed + 'l', opts);
 
+    // 通用兜底：生成题的四个选项必须两两不同。若某个随机实例撞出重复项，
+    // 换盐重抽最多 24 次；仍失败则按正确项之外补足不重复的占位值，杜绝「四个 8」。
+    function distinctOptions(q, baseSeed) {
+      let body = null;
+      for (let salt = 0; salt < 24; salt++) {
+        const r = makeRng(hashStr(baseSeed + '|' + q.id + '|s' + salt));
+        const b = q.make(r);
+        const seenOpt = new Set(b.options.map(String));
+        if (seenOpt.size === b.options.length) { body = b; break; }
+      }
+      if (!body) {
+        const r = makeRng(hashStr(baseSeed + '|' + q.id + '|s0'));
+        body = q.make(r);
+        const opts = body.options.map(String);
+        const used = new Set(opts);
+        let pad = 0;
+        for (let i = 0; i < opts.length; i++) {
+          if (i === body.answer) continue;
+          if (used.has(opts[i])) {
+            let v = String(pad++);
+            while (used.has(v) || v === opts[body.answer]) v = String(pad++);
+            opts[i] = v; used.add(v);
+          }
+        }
+        body.options = opts;
+      }
+      return body;
+    }
     const mcq = chosenM.sort((a, b) => a.level - b.level).map(q => {
-      const r = makeRng(hashStr(daySeed + '|' + q.id));
-      const body = q.gen ? q.make(r) : q;
+      const body = q.gen ? distinctOptions(q, daySeed) : q;
       return {
         uid: q.id + '@' + lesson.id, id: q.id, type: 'mcq', level: q.level,
         tags: q.tags, stem: body.stem, options: body.options,
@@ -566,7 +641,7 @@ window.QB = (function () {
               }
       };
     });
-    return { mcq, lab };
+    return { mcq, lab, plan: plan };
   }
 
   function conceptsOnDay(day) {
@@ -574,16 +649,18 @@ window.QB = (function () {
       .filter(k => TAG_DAY[k] === day)
       .map(k => TAG_LABEL[k] || k);
   }
-  function poolSizes(day, opts) {
-    const fake = { day: day, tags: [], group: '', difficulty: 1 };
+  function poolSizes(day, opts, plan) {
+    const fake = { day: day, tags: [], group: '', difficulty: 1,
+      plan: plan || { mcq: 5, lab: 3, feynman: 0 } };
     return {
       mcq: MCQ.concat(GEN).filter(q => allowed(q, fake, opts || {})).length,
-      lab: LAB.filter(q => allowed(q, fake, opts || {})).length
+      lab: LAB.filter(q => allowed(q, fake, opts || {})).length,
+      need: planOf(fake)
     };
   }
 
   return {
-    pickDaily, MCQ, GEN, LAB, ENTRY_MCQ, ENTRY_LAB,
+    pickDaily, MCQ, GEN, LAB, ENTRY_MCQ, ENTRY_LAB, planOf,
     makeRng, hashStr, TAG_DAY, TAG_LABEL, reqLabel,
     conceptsOnDay, poolSizes, allowed,
     stats: {

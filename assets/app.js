@@ -486,7 +486,7 @@
     if (!done.length) lines.push('（暂无）');
     done.forEach(l => {
       const p = state.progress[l.id];
-      lines.push('- Day ' + l.day + ' · ' + l.title + '（' + fmt(p.completedAt) + '，得分 ' + p.score + '/8）');
+      lines.push('- Day ' + l.day + ' · ' + l.title + '（' + fmt(p.completedAt) + '，得分 ' + p.score + ' 分）');
     });
     lines.push('', '## 三、未掌握的错题（按知识点）', '');
     const tags = {};
@@ -650,10 +650,34 @@
   }
 
   /* ---------------- 共用片段 ---------------- */
-  function paceBar() {
-    return '<div class="pace-bar">' + C.meta.pace.map(p =>
-      '<div class="pace-seg" style="flex:' + (p.max - p.min) + '">' + esc(p.label.replace(/（.*?）/g, '')) + '</div>'
-    ).join('') + '</div><div class="tiny muted">每日 ' + C.meta.dailyMinutes + ' 分钟：读 3′ · 拆 3′ · 跑 2′ · 选择 4′ · 编程 6′ · 费曼 2′</div>';
+  function planOf(l) {
+    const p = l && l.plan;
+    return {
+      mcq: p && Number.isInteger(p.mcq) ? p.mcq : 5,
+      lab: p && Number.isInteger(p.lab) ? p.lab : 3,
+      feynman: p && Number.isInteger(p.feynman) ? p.feynman : (l && l.feynman ? 1 : 0)
+    };
+  }
+  function fullScore(l) { const p = planOf(l); return p.mcq + p.lab; }
+  function paceSegments(l) {
+    const p = planOf(l);
+    return [
+      { w: 3, label: '读原文' },
+      { w: 3, label: '第一性原理' },
+      { w: 2, label: '跑示例' },
+      { w: p.mcq, label: p.mcq + ' 道选择' },
+      { w: p.lab * 2, label: p.lab + ' 道编程' },
+      { w: p.feynman ? 2 : 1, label: p.feynman ? '费曼复述' : '完成打卡' }
+    ];
+  }
+  function paceBar(l) {
+    const segs = paceSegments(l);
+    const p = planOf(l);
+    const total = segs.reduce((a, s) => a + s.w, 0);
+    return '<div class="pace-bar">' + segs.map(s =>
+      '<div class="pace-seg" style="flex:' + s.w + '">' + esc(s.label) + '</div>'
+    ).join('') + '</div><div class="tiny muted">本节计划约 ' + total + ' 分钟：选择 ' + p.mcq +
+      '′ · 编程 ' + (p.lab * 2) + '′' + (p.feynman ? ' · 费曼 2′' : '') + '；读、拆、跑各按原文节奏。</div>';
   }
   function mentorBlock() {
     if (!mentorReplies.length) return '';
@@ -676,11 +700,11 @@
       '双击桌面上的 <span class="kbd">Python 私塾</span> 快捷方式，它会自动启动服务并打开网站，进度会自动合回来。</div>';
     app.innerHTML = offlineTip +
       '<div class="page-head"><h1>今天是 Day ' + l.day + ' · ' + esc(l.title) + '</h1>' +
-      '<p>' + esc(l.chapter + ' ' + l.chapterTitle) + ' · 难度 ' + diffStars(l.difficulty) + ' · 约 20 分钟</p></div>' +
+      '<p>' + esc(l.chapter + ' ' + l.chapterTitle) + ' · 难度 ' + diffStars(l.difficulty) + ' · 约 ' + l.minutes + ' 分钟</p></div>' +
       '<div class="row"><div class="col-main">' +
       '<div class="card" style="border-left:4px solid var(--primary)">' +
       '<div class="card-head"><h2>今日任务</h2><span class="badge blue">' + (l.type === 'intro' ? '章导读' : '正课') + '</span></div>' +
-      '<p class="muted small" style="margin-top:0">' + esc(l.why) + '</p>' + paceBar() +
+      '<p class="muted small" style="margin-top:0">' + esc(l.why) + '</p>' + paceBar(l) +
       '<div class="divider"></div>' +
       '<div class="btn-row">' +
       '<a class="btn primary" href="lesson.html?day=' + l.day + '">开始这一节 →</a>' +
@@ -693,7 +717,7 @@
       '<div><h3>第一性原理</h3><p class="small muted">每节先问：这个问题的本质是什么？不可再分的最小事实有哪些？从这些事实怎么推出语法？边界在哪？</p></div>' +
       '<div><h3>费曼学习法</h3><p class="small muted">学完必须用自己的话讲一遍，卡壳的地方回看原文；讲不清就是没学会。复述会存进笔记册。</p></div>' +
       '</div><div class="divider"></div>' +
-      '<p class="small muted" style="margin:0">全站 ' + C.meta.totalChapters + ' 章 / ' + C.meta.totalDays + ' 节，按廖雪峰教程原顺序由易到难重排为一天一节；每节 5 道选择题 + 3 道浏览器内可自动判分的编程题。</p>' +
+      '<p class="small muted" style="margin:0">全站 ' + C.meta.totalChapters + ' 章 / ' + C.meta.totalDays + ' 节，按廖雪峰教程原顺序由易到难重排为一天一节；题量按当天难度安排：3~5 道选择题、1~3 道浏览器内可自动判分的编程题，费曼复述 0 或 1 题。</p>' +
       '</div>' +
 
       '<div class="card"><div class="card-head"><h3>今日规范提醒</h3><span class="badge orange">按进度解锁</span></div>' +
@@ -798,7 +822,7 @@
           '<span class="stars">' + diffStars(l.difficulty) + '</span>' +
           (l.type === 'intro' ? '<span class="badge">导读</span>' : '') +
           (l.env === 'local' ? '<span class="badge orange" title="浏览器沙箱受限，完整示例请在本机运行">本机</span>' : '') +
-          (p.status === 'done' ? '<span class="badge green">' + p.score + '/8</span>' : '') +
+          (p.status === 'done' ? '<span class="badge green">' + p.score + ' 分</span>' : '') +
           '</div>';
       }).join('');
       body.innerHTML = rows || '<div class="empty" style="padding:12px">没有符合条件的课</div>';
@@ -812,6 +836,7 @@
     const l = id ? lessonBy(id) : lessonByDay(day || nextLesson().day);
     currentLesson = l;
     currentQuiz = quizFor(l);
+    const plan = planOf(l);
     injectTopbar();
     const app = document.getElementById('app');
     const sess = sessionOf(l.id);
@@ -827,7 +852,7 @@
     app.innerHTML =
       '<div class="page-head"><h1>Day ' + l.day + ' · ' + esc(l.title) + '</h1>' +
       '<p>' + esc(l.num + ' / 第 ' + l.chapter + ' 章 ' + l.chapterTitle) + ' · ' + diffStars(l.difficulty) + ' · ' + l.minutes + ' 分钟 · ' +
-      (p.status === 'done' ? '<span class="badge green">已完成 ' + p.score + '/8</span>' : '<span class="badge blue">进行中</span>') + '</p></div>' +
+      (p.status === 'done' ? '<span class="badge green">已完成 · 得分 ' + p.score + ' 分</span>' : '<span class="badge blue">进行中</span>') + '</p></div>' +
       '<div class="btn-row" style="margin-bottom:16px">' +
       '<a class="btn" href="' + esc(l.url) + '" target="_blank" rel="noopener">📖 原文（免费）</a>' +
       '<a class="btn" href="catalog.html">目录</a>' +
@@ -865,11 +890,11 @@
       '<div id="expected-box" class="hidden" style="margin-top:10px"><div class="tiny muted">预期输出</div><pre class="code" style="margin-top:5px">' + esc(l.example.output) + '</pre></div>' +
       '</div></div></div>' +
       /* ④ */ '<div class="card"><div class="step"><div class="step-num">4</div><div class="step-body">' +
-      '<h2>5 道选择题 · 4 分钟</h2><p class="tiny muted">只用今天及之前讲过的内容；每题下方标出用到的知识点。选择后立即判分并给解析，答错自动进错题册。看到没学过的词，点「这题没学过」。</p>' +
+      '<h2>' + plan.mcq + ' 道选择题 · ' + plan.mcq + ' 分钟</h2><p class="tiny muted">只用今天及之前讲过的内容；每题下方标出用到的知识点。选择后立即判分并给解析，答错自动进错题册。看到没学过的词，点「这题没学过」。</p>' +
       '<div id="mcq-list">' + currentQuiz.mcq.map((q, i) => mcqHtml(q, i, sess)).join('') + '</div>' +
       '</div></div></div>' +
       /* ⑤ */ '<div class="card"><div class="step"><div class="step-num">5</div><div class="step-body">' +
-      '<h2>3 道编程实操 · 6 分钟</h2><p class="tiny muted">入门期只需写语句、看输出（Day 18 起才要求自己定义函数）。先写、再跑、最后判题；提示分三级，参考解答请最后再看。</p>' +
+      '<h2>' + plan.lab + ' 道编程实操 · ' + (plan.lab * 2) + ' 分钟</h2><p class="tiny muted">入门期只需写语句、看输出（Day 18 起才要求自己定义函数）。先写、再跑、最后判题；提示分三级，参考解答请最后再看。</p>' +
       '<div id="lab-list">' + currentQuiz.lab.map((q, i) => labHtml(q, i, sess)).join('') + '</div>' +
       '<div class="callout" id="py-status" style="display:none"></div>' +
       '</div></div></div>' +
@@ -885,10 +910,10 @@
       '<button class="btn sm ghost" data-action="self-check" data-v="no">完全讲不出</button></div>' +
       '<div class="divider"></div>' +
       '<div class="btn-row"><button class="btn success" data-action="finish">✓ 完成今日学习并打卡</button>' +
-      '<span class="tiny muted" id="finish-hint">得分 = 选择题正确数 + 编程题通过数（满分 8）</span></div>' +
+      '<span class="tiny muted" id="finish-hint">得分 = 选择题正确数 + 编程题通过数（满分 ' + fullScore(l) + '）</span></div>' +
       '</div></div></div>' +
       '</div><div class="col-side">' +
-      '<div class="card"><h3>今日节奏</h3>' + paceBar() + '</div>' +
+      '<div class="card"><h3>今日节奏</h3>' + paceBar(l) + '</div>' +
       '<div class="card"><h3>规范卡 · ' + esc(l.chapterTitle) + '</h3><p class="small">' + esc(l.norm) + '</p>' +
       '<details class="fold"><summary>查看目前已解锁的 Python 规范</summary>' +
       '<p class="tiny muted">只列出你已经学过的部分，其余会在对应章节解锁 —— 现在不用去搜。</p>' +
@@ -1221,7 +1246,7 @@
       '<button class="btn sm ghost" data-action="reset">清空记录</button></div>' +
       '<input type="file" id="import-file" accept="application/json" class="hidden">' +
       '<p class="tiny muted" style="margin-bottom:0">联动开启时数据会同时存到 <span class="kbd">records/state.json</span>；WorkBuddy 读它就能看到你每道题的对错与费曼复述。</p></div>' +
-      '<div class="card"><h3>每日契约</h3><p class="small muted">一天一节、20 分钟：读 3′ → 拆 3′ → 跑 2′ → 选择 4′ → 编程 6′ → 费曼 2′。宁可少而连续，不要一天补五天。</p></div>' +
+      '<div class="card"><h3>每日契约</h3><p class="small muted">一天一节：读 3′ → 拆 3′ → 跑 2′ → 选择题 → 编程实操 → 费曼复述或打卡。题量按当天难度安排（3~5 选择、1~3 编程、0~1 费曼）。宁可少而连续，不要一天补五天。</p></div>' +
       '</div></div>';
   }
 
@@ -1382,10 +1407,10 @@
       };
       markActivity('lesson', true);
       Store.save(true);
-      toast('Day ' + currentLesson.day + ' 打卡完成！得分 ' + score + '/8');
+      toast('Day ' + currentLesson.day + ' 打卡完成！得分 ' + score + '/' + fullScore(currentLesson));
       const next = currentLesson.day < C.lessons.length ? lessonByDay(currentLesson.day + 1) : null;
       const hint = document.getElementById('finish-hint');
-      if (hint) hint.innerHTML = '✓ 已完成 · 得分 ' + score + '/8　' +
+      if (hint) hint.innerHTML = '✓ 已完成 · 得分 ' + score + '/' + fullScore(currentLesson) + '　' +
         (next ? '<a href="lesson.html?day=' + next.day + '">进入 Day ' + next.day + ' →</a>' : '全部课程完成，去做项目吧！');
     }
     if (act === 'pg-run') pgRun();

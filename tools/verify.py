@@ -7,7 +7,8 @@
 2. Checks the anti-overscope invariants:
    - no question may appear before its unlock day,
    - no advanced terminology may appear in a day's question text before that day,
-   - every day must have at least 5 MCQ + 3 lab questions available,
+   - every day must match its difficulty-based plan (3-5 MCQ, 1-3 lab,
+     0-1 Feynman) and the pool must cover that plan,
    - no question may repeat on consecutive days,
    - every question must map to a real knowledge point (no silent fallback).
 3. Runs the *reference solution* of every programming exercise through the
@@ -54,8 +55,13 @@ const seen = {}, recentDays = [];
 for (const l of C.lessons) {
   const recent = recentDays.slice(-2).flat();
   const paper = Q.pickDaily(l, seen, { recent: recent, flagged: [], preview: false });
-  if (paper.mcq.length !== 5) problems.push(l.id + ' mcq=' + paper.mcq.length);
-  if (paper.lab.length !== 3) problems.push(l.id + ' lab=' + paper.lab.length);
+  const want = l.plan || { mcq: 5, lab: 3, feynman: l.feynman ? 1 : 0 };
+  if (!(want.mcq >= 3 && want.mcq <= 5)) problems.push(l.id + ' plan.mcq=' + want.mcq);
+  if (!(want.lab >= 1 && want.lab <= 3)) problems.push(l.id + ' plan.lab=' + want.lab);
+  if (!(want.feynman === 0 || want.feynman === 1)) problems.push(l.id + ' plan.feynman=' + want.feynman);
+  if (want.feynman !== (l.feynman ? 1 : 0)) problems.push(l.id + ' plan.feynman 与 feynman 内容不一致');
+  if (paper.mcq.length !== want.mcq) problems.push(l.id + ' mcq=' + paper.mcq.length + ' want=' + want.mcq);
+  if (paper.lab.length !== want.lab) problems.push(l.id + ' lab=' + paper.lab.length + ' want=' + want.lab);
 
   const all = paper.mcq.concat(paper.lab);
   for (const q of all) {
@@ -75,6 +81,11 @@ for (const l of C.lessons) {
   }
   for (const q of paper.mcq) {
     if (!q.stem || !Array.isArray(q.options) || q.options.length !== 4) problems.push(l.id + ' ' + q.id + ' bad options');
+    // 四个选项必须两两不同：参数化生成题（如 g001）在某些随机数下会让多个公式退化成同一个值。
+    if (Array.isArray(q.options)) {
+      const uq = new Set(q.options.map(String));
+      if (uq.size !== q.options.length) problems.push(l.id + ' ' + q.id + ' 重复选项 ' + JSON.stringify(q.options));
+    }
     if (q.answer < 0 || q.answer > 3) problems.push(l.id + ' ' + q.id + ' bad answer');
     if (!q.explain) problems.push(l.id + ' ' + q.id + ' no explain');
   }
@@ -83,8 +94,9 @@ for (const l of C.lessons) {
     scripts.push({ id: l.id + '/' + q.id, token: q.token, script: P.buildScript(q, q.solution) });
   }
 
-  const sizes = Q.poolSizes(l.day, {});
-  if (sizes.mcq < 5 || sizes.lab < 3) poolProblems.push('Day ' + l.day + ' pool mcq=' + sizes.mcq + ' lab=' + sizes.lab);
+  const sizes = Q.poolSizes(l.day, {}, want);
+  if (sizes.mcq < want.mcq || sizes.lab < want.lab)
+    poolProblems.push('Day ' + l.day + ' pool mcq=' + sizes.mcq + '/' + want.mcq + ' lab=' + sizes.lab + '/' + want.lab);
 
   const ids = all.map(q => q.id);
   for (const qid of ids) {
@@ -95,7 +107,7 @@ for (const l of C.lessons) {
   ids.forEach(id => { seen[id] = (seen[id] || 0) + 1; });
 
   days.push({ id: l.id, day: l.day, title: l.title,
-    mcq: paper.mcq.length, lab: paper.lab.length,
+    mcq: paper.mcq.length, lab: paper.lab.length, feynman: want.feynman,
     ids: ids, unlocks: all.map(q => q.unlock) });
 }
 

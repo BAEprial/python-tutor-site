@@ -21,6 +21,35 @@ SOURCE = "https://liaoxuefeng.com/books/python/introduction/index.html"
 VERIFIED_AT = "2026-11-14"
 DAILY_MINUTES = 20
 
+# 费曼复述保留清单（Day 号）。2026-11-18 依据「有重点定义 / 概念 / 常被问的保留，
+# 纯实践、很简单、现实不会有人问的删掉」逐节筛选；只保留下面的节，其余节的
+# feynman 提示置空，学习页将不显示复述卡片（打卡仍保留）。改这里即可调整。
+FEYNMAN_KEEP = {
+    5, 7, 8, 9, 10, 11, 15, 16, 18, 19, 20, 22, 23, 25, 26, 28, 32, 34, 37,
+    40, 41, 42, 47, 52, 53, 57, 62, 64, 68, 98, 102, 107, 109,
+}
+
+# 每日题量分档（2026-11-18 裁决）。按课程的章节难度 level 递进：
+#   难度 1~2 → 3 道选择；难度 3~4 → 4 道；难度 5 → 5 道。
+#   难度 1 → 1 道编程；难度 2~3 → 2 道；难度 4~5 → 3 道。
+# 章导读页（type=intro）再减 1 道编程，最低保留 1 道。
+# 费曼复述沿用 FEYNMAN_KEEP：有复述题的节为 1，其余为 0。
+LEVEL_PLAN = {
+    1: (3, 1),
+    2: (3, 2),
+    3: (4, 2),
+    4: (4, 3),
+    5: (5, 3),
+}
+
+
+def daily_plan(level: int, is_intro: bool, has_feynman: bool) -> dict[str, int]:
+    """Return the authoritative question counts for one day."""
+    mcq, lab = LEVEL_PLAN[level]
+    if is_intro:
+        lab = max(1, lab - 1)
+    return {"mcq": mcq, "lab": lab, "feynman": 1 if has_feynman else 0}
+
 # (essence, axioms, feynman_task, norm, group, level)
 CHAPTER_META = {
     "1": ("为什么人类需要一层「翻译器」才能指挥 CPU",
@@ -822,6 +851,7 @@ def main() -> None:
         level = meta[5]
         if is_chapter_intro:
             level = max(1, level - 1)
+        has_feynman = idx in FEYNMAN_KEEP
         lesson = {
             "id": f"d{idx:03d}",
             "day": idx,
@@ -832,12 +862,13 @@ def main() -> None:
             "chapterTitle": chapter_index[top]["title"],
             "type": "intro" if is_chapter_intro else "section",
             "difficulty": level,
+            "plan": daily_plan(level, is_chapter_intro, has_feynman),
             "group": meta[4],
             "tags": tags,
             "why": why,
             "points": points.split("|"),
             "boundary": boundary,
-            "feynman": feynman,
+            "feynman": feynman if has_feynman else "",
             "example": {"code": code, "output": output},
             "env": "local" if is_local else "browser",
             "envHint": LOCAL_HINT if is_local else "",
@@ -862,8 +893,10 @@ def main() -> None:
             "totalDays": len(lessons),
             "totalChapters": len(chapters),
             "dailyMinutes": DAILY_MINUTES,
-            "dailyQuizCount": 5,
-            "dailyLabCount": 3,
+            "dailyQuizRange": [3, 5],
+            "dailyLabRange": [1, 3],
+            "dailyFeynmanRange": [0, 1],
+            "planByDifficulty": {str(k): list(v) for k, v in LEVEL_PLAN.items()},
             "method": ["第一性原理", "费曼学习法", "间隔重复", "引导式提问"],
             "pyodide": {
                 "version": "314.0.8",
@@ -876,9 +909,9 @@ def main() -> None:
                 {"min": 0, "max": 3, "label": "① 读原文（3 分钟）"},
                 {"min": 3, "max": 6, "label": "② 第一性原理三问（3 分钟）"},
                 {"min": 6, "max": 8, "label": "③ 跑示例代码（2 分钟）"},
-                {"min": 8, "max": 12, "label": "④ 5 道选择题（4 分钟）"},
-                {"min": 12, "max": 18, "label": "⑤ 3 道编程实操（6 分钟）"},
-                {"min": 18, "max": 20, "label": "⑥ 费曼复述 + 打卡（2 分钟）"},
+                {"min": 8, "max": 12, "label": "④ 选择题（3~5 道，按当天计划）"},
+                {"min": 12, "max": 18, "label": "⑤ 编程实操（1~3 道，按当天计划）"},
+                {"min": 18, "max": 20, "label": "⑥ 费曼复述或打卡"},
             ],
             "norms": [
                 {"day": 1, "text": "先想清楚问题再写代码；看不懂的名词先标记，等讲到那一节再回看"},

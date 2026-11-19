@@ -9,6 +9,9 @@ window.PyRun = (function () {
   let stdout = [];
   let stderr = [];
   let interruptView = null;
+  // 浏览器里不允许 input() 回退到原生 prompt()：那是模态框，会卡住判题、无法自动继续。
+  // 用受控 stdin 队列代替；默认空行（题目若需模拟输入，用 setInputs 注入）。
+  let stdinQueue = [];
 
   function cfg() {
     return (window.COURSE && window.COURSE.meta.pyodide) || {
@@ -40,6 +43,13 @@ window.PyRun = (function () {
       pyodide = await window.loadPyodide({ indexURL: info.cdn });
       pyodide.setStdout({ batched: (s) => stdout.push(s) });
       pyodide.setStderr({ batched: (s) => stderr.push(s) });
+      // 受控 stdin：input() 从队列取一行，队列空则返回空串。
+      // 浏览器里绝不让 input() 弹原生 prompt()——会阻塞判题，用户以为「不填就不判」。
+      try {
+        if (typeof pyodide.setStdin === 'function') {
+          pyodide.setStdin({ stdin: () => (stdinQueue.length ? stdinQueue.shift() : '') });
+        }
+      } catch (_) { /* 版本不支持时忽略，仍不会比 prompt() 更差 */ }
 
       // 跨源隔离环境下可用 SharedArrayBuffer 中断死循环
       if (window.crossOriginIsolated && typeof SharedArrayBuffer !== 'undefined') {
@@ -110,15 +120,26 @@ window.PyRun = (function () {
       .replace(/\s+/g, ' ').trim();
   }
   function normLoose(s) { return normPunct(s).replace(/\s/g, ''); }
-  function punctuationHint(q, userCode, output) {
+  // 注释里的中文标点不该被当作代码错误：先把 # 注释行去掉再判断。
+  function codeWithoutComments(src) {
+    return String(src == null ? '' : src).split('\n').map(l => l.replace(/#.*$/, '')).join('\n');
+  }
+  // 提示必须依据「实际错误类型」，而不是扫到任意全角字符就套话术：
+  // 脚手架注释里常有中文逗号，之前会误报成「引号里混进全角标点」，掩盖真正的语法错误。
+  function punctuationHint(q, userCode, output, error) {
     const j = q.judge || {};
     const expect = j.expectLines ? j.expectLines.join('\n') : j.expect;
     const tips = [];
-    if (FULLWIDTH_RE.test(userCode)) {
-      tips.push('⚠️ 引号里面混进了中文全角标点。先分清两件事：引号（\' 或 "）只是包裹文字的外壳，两种引号完全等价；真正要比对的是引号「里面」的字符。请把「，」换成英文半角「,」，切到英文输入法再敲一次。');
-    }
-    if (expect !== undefined && output && normLoose(output) === normLoose(expect) && output !== expect) {
-      tips.push('💡 只差空格或标点：期望 ' + JSON.stringify(expect) + '，实际 ' +
+    const err = error || '';
+    if (/\bSyntaxError\b/i.test(err) && /comma|invalid syntax/i.test(err)) {
+      // print(7//2 7/2) 这类：两个表达式之间少了逗号。
+      tips.push('💡 这是语法错误：print() 里要同时显示多个值时，值与值之间要用英文逗号隔开。例如 print(7 // 2, 7 / 2)。请检查相邻两个表达式之间有没有逗号。');
+    } else if (/\bSyntaxError\b/i.test(err) && FULLWIDTH_RE.test(codeWithoutComments(userCode))) {
+      // 确实是代码正文（非注释）里混进全角标点导致的语法错误。
+      tips.push('💡 代码正文里混进了中文全角标点，例如（ ） ， ：。括号、逗号、冒号都要用英文半角，切到英文输入法再敲一次。');
+    } else if (expect !== undefined && output && normLoose(output) === normLoose(expect) && output !== expect) {
+      // 只有「输出内容只差空格或标点」时才谈引号内部的字符。
+      tips.push('💡 输出只差空格或标点：期望 ' + JSON.stringify(expect) + '，实际 ' +
         JSON.stringify(output) + (j.looseSpace
           ? '。本题忽略空格差异（逗号后空不空格都算对），所以请检查引号里面的标点。'
           : '。请对照检查引号里面的文字，而不是引号本身。'));
@@ -189,6 +210,7 @@ window.PyRun = (function () {
     await ensure(onProgress);
     stdout = [];
     stderr = [];
+    stdinQueue = [];   // 每次运行重置，避免上一题的输入串到下一题
     const timer = { id: null };
     if (interruptView) {
       interruptView[0] = 0;
@@ -237,7 +259,7 @@ window.PyRun = (function () {
       } else {
         detail = '测试未通过：请对照题目要求检查边界情况（空列表、0、负数等）。';
       }
-      detail += punctuationHint(q, userCode, clean);
+      detail += punctuationHint(q, userCode, clean, res.error);
     }
     return { passed, output: clean, stderr: res.stderr, detail, script };
   }
@@ -247,6 +269,7 @@ window.PyRun = (function () {
     run,
     judge,
     buildScript,
+    setInputs: (lines) => { stdinQueue = (Array.isArray(lines) ? lines : [lines]).map(String); },
     isReady: () => !!pyodide,
     isInterruptible: () => !!interruptView,
     version: () => cfg().version + ' / CPython ' + (cfg().cpython || '3.14')
