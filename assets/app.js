@@ -132,16 +132,49 @@
     });
     return m;
   }
+  /* 一天的课后题是固定的：第一次组卷后写进 session.paper，
+   * 之后刷新、重绘、发布留言都复用同一组题。学员可以标记「没学过」换掉某题，
+   * 换过的题也写回 paper，不再反复重抽。 */
   function quizFor(lesson) {
-    const cutoff = Date.now() - 3 * 86400 * 1000;
-    const recent = state.attempts
-      .filter(a => new Date(a.ts).getTime() >= cutoff)
-      .map(baseIdOf);
-    return Q.pickDaily(lesson, seenCounts(), {
-      preview: !state.settings.strictScope,
-      recent: recent,
-      flagged: Object.keys(state.scopeFlags || {})
-    });
+    const plan = planOf(lesson);
+    const sess = sessionOf(lesson.id);
+    const flagged = Object.keys(state.scopeFlags || {});
+    const fresh = () => {
+      const cutoff = Date.now() - 3 * 86400 * 1000;
+      const recent = state.attempts
+        .filter(a => new Date(a.ts).getTime() >= cutoff)
+        .map(baseIdOf);
+      return Q.pickDaily(lesson, seenCounts(), {
+        preview: !state.settings.strictScope,
+        recent: recent,
+        flagged: flagged,
+        // 老会话还没有 paper：优先保留学员已答过的题，不让做过的题消失
+        preferMcq: Object.keys(sess.mcq || {}).map(k => k.split('@')[0]),
+        preferLab: Object.keys(sess.lab || {}).map(k => k.split('@')[0])
+      });
+    };
+    const pin = q => {
+      sess.paper = { mcq: q.mcq, lab: q.lab, plan: q.plan };
+      Store.save();
+      return q;
+    };
+    const saved = sess.paper;
+    if (saved && saved.plan && saved.plan.mcq === plan.mcq && saved.plan.lab === plan.lab) {
+      const mcq = (saved.mcq || []).filter(q => q && flagged.indexOf(q.id) < 0);
+      const lab = (saved.lab || []).filter(q => q && flagged.indexOf(q.id) < 0);
+      if (mcq.length === plan.mcq && lab.length === plan.lab) {
+        return { mcq: mcq, lab: lab, plan: plan };
+      }
+      // 有题被标记「没学过」：只补缺的题，其余保持原样
+      const more = fresh();
+      const mIds = mcq.map(q => q.id), lIds = lab.map(q => q.id);
+      return pin({
+        mcq: mcq.concat(more.mcq.filter(q => mIds.indexOf(q.id) < 0)).slice(0, plan.mcq),
+        lab: lab.concat(more.lab.filter(q => lIds.indexOf(q.id) < 0)).slice(0, plan.lab),
+        plan: plan
+      });
+    }
+    return pin(fresh());
   }
   function scopeRow(q) {
     if (!q || q.unlock === undefined) return '';
@@ -413,8 +446,8 @@
     const id = currentLesson.id;
     const sess = sessionOf(id);
     document.querySelectorAll('.lab-item').forEach(it => {
-      const ed = it.querySelector('.lab-editor');
       const q = (currentQuiz.lab || []).find(x => x.uid === it.dataset.q);
+      const ed = it.querySelector('.lab-editor');
       if (ed && q) sess.lab[q.uid] = Object.assign({}, sess.lab[q.uid], { code: ed.value });
     });
     const map = { 'feynman-input': 'feynman', 'note-input': 'note', 'note-code': 'code' };
@@ -428,8 +461,8 @@
     if (ci) state.drafts[draftKey('comment', id)] = ci.value;
     const ck = document.getElementById('comment-kind');
     if (ck) state.drafts[draftKey('commentKind', id)] = ck.value;
-    const pg = document.getElementById('pg-editor');
-    if (pg) state.drafts.playground = pg.value;
+    const pgf = document.getElementById('pg-file-editor');
+    if (pgf) state.drafts.playgroundCode = pgf.value;
   }
 
   /* ---------------- 记录 ---------------- */
@@ -898,20 +931,28 @@
       '<div id="lab-list">' + currentQuiz.lab.map((q, i) => labHtml(q, i, sess)).join('') + '</div>' +
       '<div class="callout" id="py-status" style="display:none"></div>' +
       '</div></div></div>' +
-      /* ⑥ */ '<div class="card"><div class="step"><div class="step-num">6</div><div class="step-body">' +
-      '<h2>费曼复述 + 打卡 · 2 分钟</h2>' +
-      '<div class="callout purple"><strong>请用自己的话讲一遍</strong>：' + esc(l.feynman) + '</div>' +
-      '<label class="field"><span>不看原文写下来（讲不清的地方，就是下一步要回看的点）</span>' +
-      '<textarea class="input" id="feynman-input" rows="4" placeholder="例如：变量就像贴在东西上的标签……">' + esc(note.feynman || '') + '</textarea></label>' +
-      '<p class="tiny muted" style="margin:0 0 8px">✍️ 输入即自动保存，不用点按钮；关掉页面、刷新、重开电脑都不会丢，WorkBuddy 也能直接读到。</p>' +
-      '<div class="btn-row"><button class="btn sm" data-action="save-feynman">保存复述</button>' +
-      '<button class="btn sm ghost" data-action="self-check" data-v="ok">能讲清楚</button>' +
-      '<button class="btn sm ghost" data-action="self-check" data-v="half">有点卡壳</button>' +
-      '<button class="btn sm ghost" data-action="self-check" data-v="no">完全讲不出</button></div>' +
-      '<div class="divider"></div>' +
-      '<div class="btn-row"><button class="btn success" data-action="finish">✓ 完成今日学习并打卡</button>' +
-      '<span class="tiny muted" id="finish-hint">得分 = 选择题正确数 + 编程题通过数（满分 ' + fullScore(l) + '）</span></div>' +
-      '</div></div></div>' +
+      /* ⑥ 费曼复述只在本节有复述题时出现；纯实践 / 简单 / 偏门的节只保留打卡 */
+      (l.feynman
+        ? '<div class="card"><div class="step"><div class="step-num">6</div><div class="step-body">' +
+          '<h2>费曼复述 + 打卡 · 2 分钟</h2>' +
+          '<div class="callout purple"><strong>请用自己的话讲一遍</strong>：' + esc(l.feynman) + '</div>' +
+          '<label class="field"><span>不看原文写下来（讲不清的地方，就是下一步要回看的点）</span>' +
+          '<textarea class="input" id="feynman-input" rows="4" placeholder="例如：变量就像贴在东西上的标签……">' + esc(note.feynman || '') + '</textarea></label>' +
+          '<p class="tiny muted" style="margin:0 0 8px">✍️ 输入即自动保存，不用点按钮；公开站的数据只保存在当前浏览器。</p>' +
+          '<div class="btn-row"><button class="btn sm" data-action="save-feynman">保存复述</button>' +
+          '<button class="btn sm ghost" data-action="self-check" data-v="ok">能讲清楚</button>' +
+          '<button class="btn sm ghost" data-action="self-check" data-v="half">有点卡壳</button>' +
+          '<button class="btn sm ghost" data-action="self-check" data-v="no">完全讲不出</button></div>' +
+          '<div class="divider"></div>' +
+          '<div class="btn-row"><button class="btn success" data-action="finish">✓ 完成今日学习并打卡</button>' +
+          '<span class="tiny muted" id="finish-hint">得分 = 选择题正确数 + 编程题通过数（满分 ' + fullScore(l) + '）</span></div>' +
+          '</div></div></div>'
+        : '<div class="card"><div class="step"><div class="step-num">6</div><div class="step-body">' +
+          '<h2>完成打卡 · 2 分钟</h2>' +
+          '<p class="small muted">本节以实操为主，不安排费曼复述。确认上面的题都做过后，直接打卡即可。</p>' +
+          '<div class="btn-row"><button class="btn success" data-action="finish">✓ 完成今日学习并打卡</button>' +
+          '<span class="tiny muted" id="finish-hint">得分 = 选择题正确数 + 编程题通过数（满分 ' + fullScore(l) + '）</span></div>' +
+          '</div></div></div>') +
       '</div><div class="col-side">' +
       '<div class="card"><h3>今日节奏</h3>' + paceBar(l) + '</div>' +
       '<div class="card"><h3>规范卡 · ' + esc(l.chapterTitle) + '</h3><p class="small">' + esc(l.norm) + '</p>' +
@@ -947,6 +988,7 @@
       (l.prereq.length ? l.prereq.map(id => { const q = lessonBy(id); return '<a href="lesson.html?day=' + q.day + '">Day ' + q.day + ' ' + esc(q.title) + '</a>'; }).join('<br>') : '这是起点，无需前置。') +
       '</p></div>' +
       '</div></div>';
+
   }
 
   function mcqHtml(q, i, sess) {
@@ -970,18 +1012,24 @@
       '</div>';
   }
 
+  // 编程题统一用「多行代码框 + 运行看结果」的代码文件式；底层执行按题目分配：
+  //   stdout 型（入门期）→ 交互式内核（表达式自动回显，裸 len("中文") 也出 2）
+  //   compare / custom 型（def solve）→ 脚本执行（要定义函数供判题调用）
   function labHtml(q, i, sess) {
     const rec = sess.lab[q.uid] || {};
     const code = rec.code !== undefined ? rec.code : q.starter;
-    return '<div class="lab-item" data-q="' + esc(q.uid) + '">' +
+    const interactive = q.mode === 'stdout';
+    const head = interactive
+      ? 'solution.py · 写完整代码，表达式结果自动显示'
+      : 'solution.py · 实现函数，点运行看输出';
+    return '<div class="lab-item" data-q="' + esc(q.uid) + '" data-mode="' + esc(q.mode || 'compare') + '">' +
       '<div class="quiz-title"><span class="qno">LAB' + (i + 1) + '</span><span>' + esc(q.title) +
       (rec.passed ? ' <span class="badge green">已通过</span>' : '') + '</span></div>' +
       '<p class="small" style="margin:0 0 8px">' + esc(q.brief) + '</p>' +
       scopeRow(q) +
-      '<div class="code-head"><span>' +
-      (q.mode === 'stdout' ? 'solution.py · 直接写代码，看屏幕输出' : 'solution.py · 实现 solve / 按题意定义') +
-      '</span><span><span class="kbd">Ctrl+Enter</span> 运行</span></div>' +
-      '<textarea class="editor lab-editor" rows="7" spellcheck="false">' + esc(code) + '</textarea>' +
+      '<div class="code-head"><span>' + esc(head) + '</span>' +
+      '<span><span class="kbd">Ctrl+Enter</span> 运行</span></div>' +
+      '<textarea class="editor lab-editor" rows="8" spellcheck="false">' + esc(code) + '</textarea>' +
       '<div class="lab-toolbar">' +
       '<button class="btn sm primary" data-action="judge">✓ 判题</button>' +
       '<button class="btn sm" data-action="lab-run">▶ 运行看输出</button>' +
@@ -995,26 +1043,172 @@
       '</div>';
   }
 
-  /* ---------------- 实验室 ---------------- */
+  /* ---------------- 交互式解释器（REPL，多会话） ----------------
+   * 同一个 Pyodide 运行时里按 id 隔离命名空间：实验室用 'pg'，课程每道编程题
+   * 用该题 uid。replMount 负责建终端 DOM、绑键盘；逐行交给 PyRun.replFeed。
+   */
+  const replSessions = Object.create(null);
+  const ctxOf = id => replSessions[id] || null;
+
+  function replAppend(c, text, cls) {
+    if (!c) return;
+    const d = document.createElement('div');
+    d.className = 'repl-line' + (cls ? ' ' + cls : '');
+    d.textContent = text === '' ? ' ' : text;
+    c.log.appendChild(d);
+    if (c.term) c.term.scrollTop = c.term.scrollHeight;
+  }
+
+  async function replFeedLine(c, line) {
+    if (!c || c.busy) return;
+    c.busy = true;
+    try {
+      replAppend(c, c.prompt.textContent + ' ' + line, 'repl-in');
+      if (c.status) c.status.textContent = '执行中…';
+      const res = await PyRun.replFeed(line, c.id);
+      const out = String(res.out == null ? '' : res.out).replace(/\n$/, '');
+      const err = String(res.err == null ? '' : res.err).replace(/\n$/, '');
+      // 官方 Console 把表达式结果放在 val（已 repr），不走 stdout
+      const val = res.val == null ? '' : String(res.val);
+      if (out) out.split('\n').forEach(x => replAppend(c, x, 'repl-out'));
+      if (val) replAppend(c, val, 'repl-out');
+      if (err) err.split('\n').forEach(x => replAppend(c, x, 'repl-err'));
+      c.more = !!res.more;
+      c.prompt.textContent = c.more ? '...' : '>>>';
+      if (c.status) c.status.textContent = err ? '✗ 有异常' : '✓ 完成';
+    } catch (e) {
+      replAppend(c, '无法启动 Python 运行时：' + e.message + '（首次需联网下载 Pyodide）', 'repl-err');
+      if (c.status) c.status.textContent = '加载失败';
+    } finally {
+      c.busy = false;
+    }
+  }
+
+  async function replExec(c) {
+    if (!c || c.busy) return;
+    const raw = c.input.value;
+    if (!raw.trim()) {
+      if (c.more) await replFeedLine(c, '');
+      return;
+    }
+    c.input.value = '';
+    c.history.push(raw);
+    c.hIdx = c.history.length;
+    for (const line of raw.replace(/\r/g, '').split('\n')) await replFeedLine(c, line);
+    if (c.onChange) c.onChange(c);
+    c.input.focus();
+  }
+
+  function replClear(c) {
+    if (!c) return;
+    c.log.innerHTML = '';
+    c.history.length = 0;
+    c.hIdx = 0;
+    c.more = false;
+    c.prompt.textContent = '>>>';
+    c.input.value = '';
+    if (PyRun.replReset) PyRun.replReset(c.id).catch(() => {});
+    if (c.onChange) c.onChange(c);
+    c.input.focus();
+  }
+
+  // 在容器 root 里建一个 REPL；opts: { hint, initial, status, onChange }
+  function replMount(root, id, opts) {
+    opts = opts || {};
+    const hint = opts.hint || '敲一行执行一行，表达式结果直接显示。';
+    const initial = String(opts.initial || '').replace(/\r/g, '').split('\n')[0];
+    if (!root.classList.contains('repl-term')) root.classList.add('repl-term');
+    root.innerHTML =
+      '<div class="repl-log"><div class="repl-line repl-hint">' + esc(hint) + '</div></div>' +
+      '<div class="repl-input-row"><span class="repl-prompt">&gt;&gt;&gt;</span>' +
+      '<input class="repl-input" autocomplete="off" spellcheck="false" placeholder="在这里敲 Python，回车执行" value="' + esc(initial) + '"></div>';
+    const c = {
+      id,
+      term: root,
+      log: root.querySelector('.repl-log'),
+      input: root.querySelector('.repl-input'),
+      prompt: root.querySelector('.repl-prompt'),
+      status: opts.status || null,
+      onChange: opts.onChange || null,
+      history: [], hIdx: 0, more: false, busy: false
+    };
+    replSessions[id] = c;
+    const input = c.input;
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); replExec(c); return; }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (c.hIdx > 0) { c.hIdx -= 1; input.value = c.history[c.hIdx]; }
+        return;
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (c.hIdx < c.history.length) { c.hIdx += 1; input.value = c.history[c.hIdx] || ''; }
+        return;
+      }
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const s = input.selectionStart, en = input.selectionEnd;
+        input.value = input.value.slice(0, s) + '    ' + input.value.slice(en);
+        input.selectionStart = input.selectionEnd = s + 4;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
+    return c;
+  }
+
+  function pgExec() { replExec(ctxOf('pg')); }
+  function pgClear() { replClear(ctxOf('pg')); }
+  function pgSave() {
+    const c = ctxOf('pg');
+    if (!c) return;
+    const code = c.history.join('\n');
+    if (!code.trim()) return;
+    state.snippets.push({ ts: new Date().toISOString(), title: c.history[0].slice(0, 60), code });
+    Store.save();
+    renderSnippets();
+    toast('会话片段已保存');
+  }
+
+  let pgMode = 'file';
+
   function viewPlayground(params) {
     const app = document.getElementById('app');
     const initial = params.get('code') || (state.drafts || {}).playground || '';
+    const fileInitial = (state.drafts || {}).playgroundCode || '# 在这里写完整 Python 代码，点「运行」一次看全部结果\nlen("中文")\nprint("你好")';
     app.innerHTML =
-      '<div class="page-head"><h1>编程实验室</h1><p>浏览器内真实运行 CPython（Pyodide ' + esc(C.meta.pyodide.version) + '），无需安装 Python · 首次加载需联网下载约 10~20 MB</p></div>' +
+      '<div class="page-head"><h1>编程实验室</h1><p>浏览器内真实运行 CPython（Pyodide ' + esc(C.meta.pyodide.version) + '）。两种模式：代码文件（写完整代码一次运行、表达式自动回显）与交互解释器（逐行敲）。无需安装 Python · 首次加载需联网下载约 10~20 MB</p></div>' +
       '<div class="row"><div class="col-main">' +
-      '<div class="card"><div class="card-head"><h2>代码编辑器</h2>' +
+      '<div class="card"><div class="card-head">' +
+      '<div class="btn-group" role="tablist">' +
+      '<button class="btn sm ' + (pgMode === 'file' ? 'primary' : '') + '" data-action="pg-mode" data-mode="file" id="pg-tab-file">代码文件</button>' +
+      '<button class="btn sm ' + (pgMode === 'repl' ? 'primary' : '') + '" data-action="pg-mode" data-mode="repl" id="pg-tab-repl">交互解释器 &gt;&gt;&gt;</button>' +
+      '</div>' +
       '<select class="input" id="example-pick" style="width:280px"><option value="">— 载入本节示例 —</option>' +
       C.lessons.map(l => '<option value="' + l.id + '">Day ' + l.day + ' · ' + esc(l.title) + '</option>').join('') + '</select></div>' +
-      '<div class="code-head"><span>scratch.py</span><span><span class="kbd">Ctrl+Enter</span> 运行</span></div>' +
-      '<textarea class="editor" id="pg-editor" rows="16" spellcheck="false">' + esc(initial || '# 在这里写 Python，点「运行」看结果\nprint("Hello, Python!")\nprint([x * x for x in range(5)])') + '</textarea>' +
+      /* ---- 模式一：代码文件 ---- */
+      '<div id="pg-file-panel"' + (pgMode === 'file' ? '' : ' style="display:none"') + '>' +
+      '<div class="code-head"><span>solution.py · 写完整代码，表达式结果自动显示</span>' +
+      '<span><span class="kbd">Ctrl+Enter</span> 运行</span></div>' +
+      '<textarea class="editor" id="pg-file-editor" rows="15" spellcheck="false">' + esc(fileInitial) + '</textarea>' +
       '<div class="btn-row" style="margin-top:10px">' +
-      '<button class="btn primary" data-action="pg-run">▶ 运行</button>' +
-      '<button class="btn" data-action="pg-save">保存为片段</button>' +
-      '<button class="btn ghost" data-action="pg-clear">清空</button>' +
+      '<button class="btn primary" data-action="pg-run-file">▶ 运行</button>' +
+      '<button class="btn ghost" data-action="pg-clear-file">清空</button>' +
+      '<span class="tiny muted" id="pg-file-status" style="align-self:center"></span></div>' +
+      '<div class="output-box" id="pg-file-output" style="margin-top:10px;display:none"></div>' +
+      '</div>' +
+      /* ---- 模式二：交互解释器 ---- */
+      '<div id="pg-repl-panel"' + (pgMode === 'repl' ? '' : ' style="display:none"') + '>' +
+      '<div class="code-head"><span>Python ' + esc(C.meta.pyodide.cpython || '3.14') + ' · &gt;&gt;&gt; 交互模式</span>' +
+      '<span><span class="kbd">Enter</span> 执行 · <span class="kbd">↑↓</span> 历史 · <span class="kbd">Tab</span> 缩进</span></div>' +
+      '<div class="repl-term" id="pg-term"></div>' +
+      '<div class="btn-row" style="margin-top:10px">' +
+      '<button class="btn primary" data-action="pg-exec">▶ 执行</button>' +
+      '<button class="btn" data-action="pg-save">保存会话片段</button>' +
+      '<button class="btn ghost" data-action="pg-clear">清空会话</button>' +
       '<span class="tiny muted" id="pg-status" style="align-self:center"></span></div>' +
       '</div>' +
-      '<div class="card"><div class="card-head"><h3>输出</h3><span class="tiny muted" id="pg-runtime">运行时：待加载</span></div>' +
-      '<div class="output-box" id="pg-output">点「运行」后，stdout / stderr 会显示在这里。</div></div>' +
+      '</div>' +
       '<div class="card"><h3>我的片段</h3><div id="pg-snippets"></div></div>' +
       '</div><div class="col-side">' +
       '<div class="card"><h3>环境边界</h3><ul class="points small">' +
@@ -1024,29 +1218,80 @@
       '<li>可以运行：纯 Python 语法、标准库大部分模块、sqlite3 内存库、asyncio</li>' +
       '<li>这些章节的编程题改成「纯逻辑模拟」，完整示例请在本机 venv 跑</li>' +
       '</ul></div>' +
-      '<div class="card"><h3>规范提醒</h3><p class="small muted">保存成文件时记得：UTF-8、4 空格缩进、<span class="kbd">if __name__ == "__main__":</span> 入口、函数写 docstring。</p></div>' +
+      '<div class="card"><h3>两种模式怎么选</h3><ul class="points small">' +
+      '<li><strong>代码文件</strong>：像写 .py 文件一样写多行，点运行一次看全部结果；<code>len("中文")</code> 直接显示 <code>2</code>，不必套 print</li>' +
+      '<li><strong>交互解释器</strong>：逐行敲、立刻回显，适合试探一行代码；变量跨行保留，用 ↑↓ 翻历史</li>' +
+      '<li>两种模式的表达式都会自动回显结果，这是交互式内核的行为，不是脚本文件</li>' +
+      '<li>写好的代码可用「保存会话片段」或「存入笔记」留下来</li>' +
+      '</ul></div>' +
       '</div></div>';
-    renderSnippets();
-    const pick = document.getElementById('example-pick');
-    pick.addEventListener('change', () => {
-      const l = lessonBy(pick.value);
-      if (!l) return;
-      document.getElementById('pg-editor').value = l.example.code;
-      toast('已载入 Day ' + l.day + ' 示例：先预测输出，再运行验证');
+
+    const pg = replMount(document.getElementById('pg-term'), 'pg', {
+      hint: 'Python ' + esc(C.meta.pyodide.cpython || '3.14') + ' (Pyodide) · 交互式解释器\n敲一行执行一行，表达式结果直接显示。试试：len("中文")',
+      initial,
+      status: document.getElementById('pg-status'),
+      onChange: c => { state.drafts.playground = c.history.join('\n'); Store.save(); }
     });
-    document.getElementById('pg-editor').addEventListener('keydown', e => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); pgRun(); }
-      if (e.key === 'Tab') {
-        e.preventDefault();
-        const t = e.target, s = t.selectionStart;
-        t.value = t.value.slice(0, s) + '    ' + t.value.slice(t.selectionEnd);
-        t.selectionStart = t.selectionEnd = s + 4;
+    document.getElementById('example-pick').addEventListener('change', e => {
+      const l = lessonBy(e.target.value);
+      if (!l) return;
+      if (pgMode === 'file') {
+        const ed = document.getElementById('pg-file-editor');
+        if (ed) { ed.value = l.example.code; ed.focus(); }
+      } else {
+        pg.input.value = l.example.code;
+        pg.input.focus();
       }
+      toast('已载入 Day ' + l.day + ' 示例');
     });
     document.getElementById('pg-snippets').addEventListener('click', e => {
       const b = e.target.closest('[data-snip]');
-      if (b) document.getElementById('pg-editor').value = state.snippets[parseInt(b.dataset.snip, 10)].code;
+      if (!b) return;
+      const code = state.snippets[parseInt(b.dataset.snip, 10)].code;
+      if (pgMode === 'file') {
+        const ed = document.getElementById('pg-file-editor');
+        if (ed) { ed.value = code; ed.focus(); }
+      } else {
+        pg.input.value = code;
+        pg.input.focus();
+      }
     });
+    renderSnippets();
+  }
+
+  function pgSwitchMode(mode) {
+    if (mode !== 'file' && mode !== 'repl') return;
+    pgMode = mode;
+    const fp = document.getElementById('pg-file-panel');
+    const rp = document.getElementById('pg-repl-panel');
+    if (fp) fp.style.display = mode === 'file' ? '' : 'none';
+    if (rp) rp.style.display = mode === 'repl' ? '' : 'none';
+    const tf = document.getElementById('pg-tab-file');
+    const tr = document.getElementById('pg-tab-repl');
+    if (tf) tf.className = 'btn sm' + (mode === 'file' ? ' primary' : '');
+    if (tr) tr.className = 'btn sm' + (mode === 'repl' ? ' primary' : '');
+  }
+
+  async function pgRunFile() {
+    const ed = document.getElementById('pg-file-editor');
+    const out = document.getElementById('pg-file-output');
+    const status = document.getElementById('pg-file-status');
+    if (!ed || !out) return;
+    const code = ed.value;
+    out.style.display = 'block';
+    out.innerHTML = '<span class="muted">正在运行…</span>';
+    if (status) status.textContent = '运行中';
+    try {
+      const res = await PyRun.runCell(code, { onProgress: m => { out.textContent = m; } });
+      let html = '';
+      if (res.out) html += esc(res.out);
+      if (res.err) html += (html ? '\n' : '') + '<span class="err">' + esc(res.err) + '</span>';
+      out.innerHTML = html || '<span class="ok">（运行完成，没有输出）</span>';
+      if (status) status.textContent = res.err ? '✗ 有异常' : '✓ 完成';
+    } catch (e) {
+      out.innerHTML = '<span class="err">无法启动 Python 运行时：' + esc(e.message) + '（首次需联网下载 Pyodide）</span>';
+      if (status) status.textContent = '加载失败';
+    }
   }
   function renderSnippets() {
     const box = document.getElementById('pg-snippets');
@@ -1057,29 +1302,6 @@
         '<div class="tiny muted">' + fmt(s.ts, true) + '</div></div><button class="btn sm ghost" data-snip="' + idx + '">载入</button></div>';
     }).join('') : '<div class="empty" style="padding:14px">还没有保存片段</div>';
   }
-  async function pgRun() {
-    const code = document.getElementById('pg-editor').value;
-    const out = document.getElementById('pg-output');
-    const status = document.getElementById('pg-status');
-    out.innerHTML = '<span class="muted">运行中…</span>';
-    status.innerHTML = '<span class="spinner"></span> 加载/执行中';
-    try {
-      const res = await PyRun.run(code, {
-        onProgress: m => { out.textContent = m; }
-      });
-      let html = '';
-      if (res.stdout) html += esc(res.stdout);
-      if (res.stderr) html += '\n<span class="err">' + esc(res.stderr) + '</span>';
-      if (res.error) html += (html ? '\n' : '') + '<span class="err">' + esc(res.error) + '</span>';
-      out.innerHTML = html || '<span class="ok">（运行完成，没有输出）</span>';
-      document.getElementById('pg-runtime').textContent = '运行时：Pyodide ' + PyRun.version() + (PyRun.isInterruptible() ? ' · 超时保护开' : '');
-      status.textContent = res.ok ? '✓ 完成' : '✗ 有异常';
-    } catch (e) {
-      out.innerHTML = '<span class="err">无法启动 Python 运行时：' + esc(e.message) + '\n请检查网络（首次需从 jsDelivr 下载），或改用本地 Python。</span>';
-      status.textContent = '加载失败';
-    }
-  }
-
   /* ---------------- 错题册 ---------------- */
   function viewReview(params) {
     const tab = params.get('tab') || 'wrong';
@@ -1302,14 +1524,19 @@
       const out = item.querySelector('.lab-output');
       const sess = sessionOf(currentLesson.id);
       out.style.display = 'block';
-      out.innerHTML = '<span class="muted">正在启动 Python…</span>';
+      out.innerHTML = '<span class="muted">' + (act === 'lab-run' ? '正在运行…' : '正在判题…') + '</span>';
       const onProgress = m => { out.textContent = m; };
       try {
         if (act === 'lab-run') {
-          const res = await PyRun.run(code, { onProgress });
-          out.innerHTML = (res.stdout ? esc(res.stdout) : '') +
-            (res.stderr ? '\n<span class="err">' + esc(res.stderr) + '</span>' : '') +
-            (res.error ? '<span class="err">' + esc(res.error) + '</span>' : '') || '<span class="ok">（无输出）</span>';
+          // 按题目分配运行系统：stdout 型走交互式内核（表达式回显），其余走脚本
+          const res = q.mode === 'stdout'
+            ? await PyRun.runCell(code, { onProgress })
+            : await PyRun.run(code, { onProgress });
+          let html = '';
+          if (res.out) html += esc(res.out);
+          if (res.stderr) html += (html ? '\n' : '') + '<span class="err">' + esc(res.stderr) + '</span>';
+          if (res.error) html += (html ? '\n' : '') + '<span class="err">' + esc(res.error) + '</span>';
+          out.innerHTML = html || '<span class="ok">（运行完成，没有输出）</span>';
           sess.lab[q.uid] = Object.assign({}, sess.lab[q.uid], { code });
           Store.save();
         } else {
@@ -1413,13 +1640,18 @@
       if (hint) hint.innerHTML = '✓ 已完成 · 得分 ' + score + '/' + fullScore(currentLesson) + '　' +
         (next ? '<a href="lesson.html?day=' + next.day + '">进入 Day ' + next.day + ' →</a>' : '全部课程完成，去做项目吧！');
     }
-    if (act === 'pg-run') pgRun();
-    if (act === 'pg-clear') document.getElementById('pg-editor').value = '';
-    if (act === 'pg-save') {
-      const code = document.getElementById('pg-editor').value;
-      if (!code.trim()) return;
-      state.snippets.push({ ts: new Date().toISOString(), title: code.trim().split('\n')[0].slice(0, 60), code });
-      Store.save(); renderSnippets(); toast('片段已保存');
+    if (act === 'pg-exec') pgExec();
+    if (act === 'pg-clear') pgClear();
+    if (act === 'pg-save') pgSave();
+    if (act === 'pg-mode') pgSwitchMode(btn.dataset.mode);
+    if (act === 'pg-run-file') pgRunFile();
+    if (act === 'pg-clear-file') {
+      const ed = document.getElementById('pg-file-editor');
+      const out = document.getElementById('pg-file-output');
+      if (ed) ed.value = '';
+      if (out) { out.style.display = 'none'; out.innerHTML = ''; }
+      state.drafts.playgroundCode = '';
+      Store.save();
     }
     if (act === 'export-history') {
       const rows = [['时间', '课程', '类型', '题目', '结果']].concat(state.attempts.map(a =>
@@ -1502,8 +1734,8 @@
       state.drafts[draftKey(id === 'comment-input' ? 'comment' : 'commentKind',
                             currentLesson.id)] = t.value;
       Store.save();
-    } else if (id === 'pg-editor') {
-      state.drafts.playground = t.value;
+    } else if (id === 'pg-file-editor') {
+      state.drafts.playgroundCode = t.value;
       Store.save();
     } else if (t.classList && t.classList.contains('lab-editor')) {
       const item = t.closest('.lab-item');
@@ -1518,11 +1750,76 @@
   document.addEventListener('input', autosaveInput);
   document.addEventListener('change', autosaveInput);
 
+  /* ---------------- 代码编辑器：成对符号自动补齐 ----------------
+   * 只作用于代码输入框（代码文件框 .editor、交互解释器 .repl-input）；
+   * 费曼复述 / 笔记 / 留言等中文输入框不受影响。
+   * 打左符号补右符号并把光标放中间；选中文本时用一对符号包住；
+   * 再打一次右符号只跳过不重复；Backspace 在空对中间一次删掉两个。
+   */
+  const AUTO_CLOSE = { '"': '"', "'": "'", '(': ')', '[': ']', '{': '}' };
+  const AUTO_CLOSERS = new Set(['"', "'", ')', ']', '}']);
+
+  function editorAt(t) {
+    if (!t || t.readOnly || t.disabled || !t.classList) return null;
+    if (t.tagName === 'TEXTAREA' && t.classList.contains('editor')) return t;  // 代码文件框（实验室/课程）
+    if (t.classList && t.classList.contains('repl-input')) return t;   // 交互解释器输入框
+    return null;
+  }
+  function editorReplace(t, text, from, to, caret, caretEnd) {
+    if (typeof t.setRangeText === 'function') t.setRangeText(text, from, to, 'end');
+    else t.value = t.value.slice(0, from) + text + t.value.slice(to);
+    t.selectionStart = caret;
+    t.selectionEnd = caretEnd === undefined ? caret : caretEnd;
+    // 程序化改值不会触发原生 input，补发一次，草稿自动落盘照常工作
+    t.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  function autoClose(e) {
+    if (e.isComposing || e.keyCode === 229) return;      // 中文输入法组字中不干预
+    if (e.ctrlKey || e.metaKey || e.altKey) return;       // 不抢 Ctrl+Enter 等快捷键
+    const t = editorAt(e.target);
+    if (!t) return;
+    const key = e.key, v = t.value, s = t.selectionStart, end = t.selectionEnd;
+    if (key === 'Backspace') {
+      if (s !== end || s < 1) return;
+      const left = v.slice(s - 1, s), right = v.slice(s, s + 1);
+      if (AUTO_CLOSE[left] !== right) return;
+      editorReplace(t, '', s - 1, s + 1, s - 1);
+      e.preventDefault();
+      return;
+    }
+    if (!key || key.length !== 1) return;
+    const next = v.slice(end, end + 1), prev = v.slice(s - 1, s);
+    if (AUTO_CLOSERS.has(key) && next === key && s === end) {
+      // 补齐后再敲右符号：光标直接越过去，不产生重复字符
+      t.selectionStart = t.selectionEnd = end + 1;
+      e.preventDefault();
+      return;
+    }
+    const close = AUTO_CLOSE[key];
+    if (!close) return;
+    if (s !== end) {                                      // 包住选中的文本
+      editorReplace(t, key + v.slice(s, end) + close, s, end, s + 1, s + 1 + (end - s));
+      e.preventDefault();
+      return;
+    }
+    // 引号紧跟在文字 / 非空白字符时不补齐，避免在单词或字符串中间插入多余引号
+    if ((key === '"' || key === "'") &&
+        (/[\w\u4e00-\u9fff]/.test(prev) || (next && !/[\s)\]},;:]/.test(next)))) return;
+    editorReplace(t, key + close, s, end, s + 1);
+    e.preventDefault();
+  }
+
   document.addEventListener('keydown', function (e) {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && e.target.classList.contains('lab-editor')) {
-      const item = e.target.closest('.lab-item');
-      const b = item.querySelector('[data-action="judge"]');
-      if (b) b.click();
+    autoClose(e);
+    if (e.defaultPrevented) return;
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      if (e.target.id === 'pg-file-editor') { e.preventDefault(); pgRunFile(); return; }
+      if (e.target.classList && e.target.classList.contains('lab-editor')) {
+        e.preventDefault();
+        const run = e.target.closest('.lab-item').querySelector('[data-action="lab-run"]');
+        if (run) run.click();
+        return;
+      }
     }
   });
 

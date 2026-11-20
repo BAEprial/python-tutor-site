@@ -555,8 +555,10 @@ window.QB = (function () {
       ? ok
       : pool.filter(q => q.unlock <= lesson.day + (opts.preview ? 1 : 0)
           && !(opts.flagged && opts.flagged.indexOf(q.id) >= 0));
+    // 老会话首次固定卷子时，优先保留学员已经答过的题；不参与日常组卷
+    const prefer = opts.prefer || [];
     const scored = src
-      .map(q => ({ q, s: matchScore(q, lesson, seen, daySeed, opts) }))
+      .map(q => ({ q, s: matchScore(q, lesson, seen, daySeed, opts) + (prefer.indexOf(q.id) >= 0 ? 1000 : 0) }))
       .sort((a, b) => b.s - a.s || (a.q.id < b.q.id ? -1 : 1));
     // 只要没做过的题够数，就绝不重复最近两天出过的题
     const recent = opts.recent || [];
@@ -579,8 +581,10 @@ window.QB = (function () {
     const daySeed = lesson.id + '|' + (lesson.day || 1);
     const plan = planOf(lesson);
     const mcqPool = MCQ.concat(GEN);
-    const chosenM = take(mcqPool, plan.mcq, lesson, seen, daySeed + 'm', opts);
-    const chosenL = take(LAB, plan.lab, lesson, seen, daySeed + 'l', opts);
+    const chosenM = take(mcqPool, plan.mcq, lesson, seen, daySeed + 'm',
+      Object.assign({}, opts, { prefer: opts.preferMcq || [] }));
+    const chosenL = take(LAB, plan.lab, lesson, seen, daySeed + 'l',
+      Object.assign({}, opts, { prefer: opts.preferLab || [] }));
 
     // 通用兜底：生成题的四个选项必须两两不同。若某个随机实例撞出重复项，
     // 换盐重抽最多 24 次；仍失败则按正确项之外补足不重复的占位值，杜绝「四个 8」。

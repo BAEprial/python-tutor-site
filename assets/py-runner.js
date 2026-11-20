@@ -148,12 +148,25 @@ window.PyRun = (function () {
   }
   function buildStdoutScript(q, userCode) {
     const j = q.judge || {};
+    // 用交互式内核执行：表达式回显与 print 一样计入 stdout。
+    // 这样学员写 len("中文")（不套 print）也能得到「2」并通过判题，
+    // 与代码文件式运行器的行为一致；老写法 print(len("中文")) 照常通过。
+    // 按 AST 拆顶层语句：表达式用 single（回显），块用 exec（保证 for/if/def 完整）。
     const lines = [
-      'import io, contextlib, re',
+      'import io, contextlib, re, ast as _ast',
       '__SRC__ = ' + pyLit(userCode),
       '__BUF__ = io.StringIO()',
-      'with contextlib.redirect_stdout(__BUF__):',
-      '    exec(compile(__SRC__, "<solution.py>", "exec"), {"__name__": "__main__"})',
+      '__ERRBUF__ = io.StringIO()',
+      'with contextlib.redirect_stdout(__BUF__), contextlib.redirect_stderr(__ERRBUF__):',
+      '    __NS__ = {"__name__": "__main__"}',
+      '    __TREE__ = _ast.parse(__SRC__)',
+      '    for __N__ in __TREE__.body:',
+      '        if isinstance(__N__, _ast.Expr):',
+      '            exec(compile(_ast.Interactive(body=[__N__]), "<solution.py>", "single"), __NS__)',
+      '        else:',
+      '            __M__ = _ast.Module(body=[__N__], type_ignores=[])',
+      '            _ast.fix_missing_locations(__M__)',
+      '            exec(compile(__M__, "<solution.py>", "exec"), __NS__)',
       '__GOT__ = __BUF__.getvalue().strip()',
       'print(__GOT__)'
     ];
@@ -240,6 +253,123 @@ window.PyRun = (function () {
     return execPython(code, opts.timeoutMs || 8000, opts.onProgress);
   }
 
+  /* 代码文件式运行：写完整的多行代码，一次执行，表达式自动回显。
+   * 按 AST 拆成顶层语句：表达式语句用 compile(..., 'single') 触发 displayhook 回显，
+   * 其余语句（for/if/def/try 等块）用 'exec' 编译，保证块结构完整。
+   * 这就是 Jupyter/IDLE 单元格的行为——既保留「写代码文件」的完整感，
+   * 又保留学员要求的「直接 len("中文") 就显示 2、不用套 print」。
+   * 每次调用用全新命名空间，等价于重新跑一遍完整脚本。
+   */
+  const CELL_BOOTSTRAP = [
+    'import io as _wb_io, json as _wb_json, contextlib as _wb_ctx, ast as _wb_ast',
+    'def _wb_run_cell(src, ns=None):',
+    '    ns = ns if ns is not None else {"__name__": "__cell__"}',
+    '    out, err = _wb_io.StringIO(), _wb_io.StringIO()',
+    '    with _wb_ctx.redirect_stdout(out), _wb_ctx.redirect_stderr(err):',
+    '        tree = _wb_ast.parse(src)',
+    '        for __n__ in tree.body:',
+    '            if isinstance(__n__, _wb_ast.Expr):',
+    '                exec(compile(_wb_ast.Interactive(body=[__n__]), "<cell>", "single"), ns)',
+    '            else:',
+    '                __m__ = _wb_ast.Module(body=[__n__], type_ignores=[])',
+    '                _wb_ast.fix_missing_locations(__m__)',
+    '                exec(compile(__m__, "<cell>", "exec"), ns)',
+    '    return _wb_json.dumps({"out": out.getvalue(), "err": err.getvalue()})'
+  ].join('\n');
+  let cellBoot = null;
+
+  async function ensureCell() {
+    await ensure();
+    if (cellBoot) return;
+    await pyodide.runPythonAsync(CELL_BOOTSTRAP);
+    cellBoot = true;
+  }
+
+  async function runCell(code, opts) {
+    opts = opts || {};
+    if (opts.onProgress) opts.onProgress('正在运行…');
+    await ensureCell();
+    stdout = [];
+    stderr = [];
+    const src = JSON.stringify(String(code == null ? '' : code));
+    try {
+      const raw = await pyodide.runPythonAsync('_wb_run_cell(' + src + ')');
+      return JSON.parse(String(raw));
+    } catch (e) {
+      return { out: '', err: (e && e.message) ? e.message : String(e) };
+    }
+  }
+
+  /* 交互式解释器：用 Pyodide 官方 pyodide.console.PyodideConsole（314 版）。
+   * 官方 Console 负责 sys.displayhook 回显、stdout/stderr 重定向、多行缓冲与
+   * syntax_check（incomplete / syntax-error / complete），比手写 InteractiveConsole 稳。
+   * 按 sid 隔离命名空间：课程每道编程题一个会话，互不串变量。
+   */
+  const REPL_BOOTSTRAP = [
+    'import json as _wb_json',
+    'from pyodide.console import PyodideConsole as _WBConsole',
+    '_wb_consoles = {}',
+    '_wb_bufs = {}',
+    'def _wb_console(sid):',
+    '    c = _wb_consoles.get(sid)',
+    '    if c is None:',
+    '        def _so(s, _k=sid):',
+    '            _wb_bufs.setdefault(_k, {"out": [], "err": []})["out"].append(s)',
+    '        def _se(s, _k=sid):',
+    '            _wb_bufs.setdefault(_k, {"out": [], "err": []})["err"].append(s)',
+    '        c = _WBConsole(globals={"__name__": "__console__"}, stdout_callback=_so, stderr_callback=_se, stdin_callback=lambda n: "")',
+    '        _wb_consoles[sid] = c',
+    '    return c',
+    'async def _wb_repl_feed(sid, line):',
+    '    c = _wb_console(sid)',
+    '    _wb_bufs[sid] = {"out": [], "err": []}',
+    '    fut = c.push(line)',
+    '    check = fut.syntax_check',
+    '    ex = None',
+    '    if check != "incomplete":',
+    '        try:',
+    '            await fut',
+    '        except BaseException as _e:',
+    '            ex = _e',
+    '    b = _wb_bufs[sid]',
+    '    out = "".join(b["out"])',
+    '    err = "".join(b["err"])',
+    '    if check == "syntax-error" and getattr(fut, "formatted_error", None):',
+    '        err = fut.formatted_error',
+    '    elif not err and ex is not None:',
+    '        err = str(ex)',
+    '    try:',
+    '        val = fut.result()',
+    '    except BaseException:',
+    '        val = None',
+    '    # 官方 Console 不把表达式结果写 stdout，值在 future 里；按 REPL 惯例回显 repr',
+    '    return _wb_json.dumps({"more": check == "incomplete", "check": check, "out": out, "err": err, "val": None if val is None else repr(val)})',
+    'def _wb_repl_reset(sid):',
+    '    _wb_consoles.pop(sid, None)',
+    '    _wb_bufs.pop(sid, None)'
+  ].join('\n');
+  let replBoot = null;
+
+  async function ensureRepl() {
+    await ensure();
+    if (replBoot) return;
+    await pyodide.runPythonAsync(REPL_BOOTSTRAP);
+    replBoot = true;
+  }
+
+  async function replFeed(line, sid) {
+    await ensureRepl();
+    const id = sid || 'pg';
+    const src = 'await _wb_repl_feed(' + JSON.stringify(id) + ', ' + JSON.stringify(String(line)) + ')';
+    const raw = await pyodide.runPythonAsync(src);
+    return JSON.parse(String(raw));
+  }
+
+  async function replReset(sid) {
+    await ensureRepl();
+    await pyodide.runPythonAsync('_wb_repl_reset(' + JSON.stringify(sid || 'pg') + ')');
+  }
+
   async function judge(q, userCode, opts) {
     opts = opts || {};
     const script = buildScript(q, userCode);
@@ -267,8 +397,11 @@ window.PyRun = (function () {
   return {
     ensure,
     run,
+    runCell,
     judge,
     buildScript,
+    replFeed,
+    replReset,
     setInputs: (lines) => { stdinQueue = (Array.isArray(lines) ? lines : [lines]).map(String); },
     isReady: () => !!pyodide,
     isInterruptible: () => !!interruptView,

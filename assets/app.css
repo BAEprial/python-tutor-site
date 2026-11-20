@@ -182,6 +182,24 @@ pre.code, .code-block {
 }
 .output-box .err { color: #fca5a5; }
 .output-box .ok { color: #86efac; }
+.repl-term {
+  background: #0f172a; color: #e2e8f0; border: 1px solid var(--border);
+  border-top: none; border-radius: 0 0 9px 9px; padding: 12px 14px;
+  font-family: var(--mono); font-size: 13px; line-height: 1.7;
+  min-height: 260px; max-height: 420px; overflow: auto;
+}
+.repl-line { white-space: pre-wrap; word-break: break-word; }
+.repl-hint { color: #94a3b8; margin-bottom: 8px; }
+.repl-in { color: #93c5fd; }
+.repl-out { color: #e2e8f0; }
+.repl-err { color: #fca5a5; }
+.repl-input-row { display: flex; align-items: baseline; gap: 8px; margin-top: 4px; }
+.repl-prompt { color: #93c5fd; flex: none; white-space: pre; }
+.repl-input {
+  flex: 1; min-width: 0; background: transparent; border: 0; outline: none;
+  color: #e2e8f0; font: inherit; padding: 0; caret-color: #e2e8f0;
+}
+.repl-input::placeholder { color: #64748b; }
 .editor {
   width: 100%; min-height: 160px; background: var(--code-bg); color: #243044;
   border: 1px solid var(--border); border-radius: 9px; padding: 12px 14px;
@@ -195,6 +213,8 @@ pre.code, .code-block {
   border-bottom: none; border-radius: 9px 9px 0 0; font-size: 12px; color: var(--muted);
 }
 .code-head + .editor { border-radius: 0 0 9px 9px; }
+.btn-group { display: inline-flex; gap: 6px; }
+.lab-editor { min-height: 150px; }
 
 /* ---------- 课程目录 ---------- */
 .chapter { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; overflow: hidden; }
